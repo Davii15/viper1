@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { signIn } from "@/lib/auth"
 
 export default function SignIn() {
@@ -19,7 +19,6 @@ export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const router = useRouter()
   const searchParams = useSearchParams()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,18 +31,20 @@ export default function SignIn() {
       const result = await signIn(email, password)
       console.log("✅ Login successful:", result)
 
+      // ✅ Wait a moment for session to be established
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
       // ✅ Get return URL or default to dashboard
       const returnUrl = searchParams.get("returnUrl") || "/dashboard"
       console.log("🔄 Redirecting to:", returnUrl)
 
-      // ✅ Simple window redirect - no router involved
-      window.location.href = returnUrl
+      // ✅ Force a complete page reload to ensure session is recognized
+      window.location.replace(returnUrl)
     } catch (err: any) {
       console.error("❌ Sign in failed:", err)
       setError(err.message || "Failed to sign in. Please check your credentials.")
-      setLoading(false) // Only set loading false on error
+      setLoading(false)
     }
-    // Don't set loading false on success - let the redirect happen
   }
 
   return (

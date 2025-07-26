@@ -82,15 +82,19 @@ export default function Dashboard() {
     handleSearch()
   }, [searchQuery, posts])
 
-  // ✅ Simplified auth check - let middleware handle protection
+  // ✅ Enhanced auth check with better error handling
   const checkAuthAndLoadData = async () => {
     try {
       console.log("🔍 Loading user data...")
+
+      // ✅ Add a small delay to ensure session is established
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
       const currentUser = await getCurrentUser()
 
       if (!currentUser) {
-        console.warn("⚠️ No user data available")
-        // ✅ Don't redirect here - let middleware handle it
+        console.warn("⚠️ No user data available, redirecting to signin")
+        router.replace("/auth/signin")
         return
       }
 
@@ -98,14 +102,14 @@ export default function Dashboard() {
       setUser(currentUser)
     } catch (error) {
       console.error("❌ Error loading user data:", error)
-      // ✅ Don't redirect on error - let middleware handle protection
+      router.replace("/auth/signin")
     } finally {
       setLoading(false)
     }
   }
 
   const loadPosts = async (page = 1, append = false) => {
-    if (!user) return // ✅ Guard clause
+    if (!user) return
 
     if (!append) setPostsLoading(true)
 
@@ -123,7 +127,7 @@ export default function Dashboard() {
         postsResponse = await getPosts(postFilters)
       }
 
-      console.log("Loaded posts:", postsResponse.posts.length) // Debug log
+      console.log("Loaded posts:", postsResponse.posts.length)
 
       if (append) {
         setPosts((prev) => [...prev, ...postsResponse.posts])
@@ -135,7 +139,6 @@ export default function Dashboard() {
       setHasMore(postsResponse.hasMore)
     } catch (error) {
       console.error("Error loading posts:", error)
-      // ✅ Set empty array on error
       if (!append) {
         setPosts([])
       }
@@ -145,9 +148,8 @@ export default function Dashboard() {
     }
   }
 
-  // Add this function to refresh posts when returning from create page
   const refreshPosts = async () => {
-    console.log("Refreshing posts...") // Debug log
+    console.log("Refreshing posts...")
     setRefreshing(true)
     await loadPosts()
   }
@@ -171,8 +173,6 @@ export default function Dashboard() {
 
   const handleLike = async (postId: string, isLiked: boolean) => {
     if (!user) return
-
-    // Prevent multiple clicks
     if (actionLoading[`like-${postId}`]) return
 
     setActionLoading((prev) => ({ ...prev, [`like-${postId}`]: true }))
@@ -186,7 +186,6 @@ export default function Dashboard() {
         await likePost(postId)
       }
 
-      // Update local state optimistically
       const updatePosts = (posts: any[]) =>
         posts.map((post) =>
           post.id === postId
@@ -204,7 +203,6 @@ export default function Dashboard() {
       console.log(`✅ ${isLiked ? "Unliked" : "Liked"} post successfully`)
     } catch (error) {
       console.error("❌ Error toggling like:", error)
-      // Show error feedback to user
       alert(`Failed to ${isLiked ? "unlike" : "like"} post. Please try again.`)
     } finally {
       setActionLoading((prev) => ({ ...prev, [`like-${postId}`]: false }))
@@ -213,8 +211,6 @@ export default function Dashboard() {
 
   const handleBookmark = async (postId: string, isBookmarked: boolean) => {
     if (!user) return
-
-    // Prevent multiple clicks
     if (actionLoading[`bookmark-${postId}`]) return
 
     setActionLoading((prev) => ({ ...prev, [`bookmark-${postId}`]: true }))
@@ -228,7 +224,6 @@ export default function Dashboard() {
         await bookmarkPost(postId)
       }
 
-      // Update local state optimistically
       const updatePosts = (posts: any[]) =>
         posts.map((post) => (post.id === postId ? { ...post, is_bookmarked: !isBookmarked } : post))
 
@@ -238,7 +233,6 @@ export default function Dashboard() {
       console.log(`✅ ${isBookmarked ? "Unbookmarked" : "Bookmarked"} post successfully`)
     } catch (error) {
       console.error("❌ Error toggling bookmark:", error)
-      // Show error feedback to user
       alert(`Failed to ${isBookmarked ? "unbookmark" : "bookmark"} post. Please try again.`)
     } finally {
       setActionLoading((prev) => ({ ...prev, [`bookmark-${postId}`]: false }))
@@ -253,7 +247,6 @@ export default function Dashboard() {
       router.push(`/post/${postId}`)
     } catch (error) {
       console.error("❌ Error tracking view:", error)
-      // Still navigate even if tracking fails
       router.push(`/post/${postId}`)
     }
   }
@@ -262,11 +255,10 @@ export default function Dashboard() {
     try {
       console.log("🚪 Signing out...")
       await signOut()
-      router.replace("/")
+      window.location.replace("/")
     } catch (error) {
       console.error("Error signing out:", error)
-      // Force redirect even if sign out fails
-      router.replace("/")
+      window.location.replace("/")
     }
   }
 
@@ -287,7 +279,6 @@ export default function Dashboard() {
     setCurrentPage(1)
   }
 
-  // Add this useEffect after the existing ones
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden && user) {
@@ -315,7 +306,7 @@ export default function Dashboard() {
     )
   }
 
-  // ✅ Show message if no user data (middleware should handle redirect)
+  // ✅ Show message if no user data
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
@@ -323,9 +314,9 @@ export default function Dashboard() {
           <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <UserIcon className="w-8 h-8 text-orange-500" />
           </div>
-          <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">Loading user data...</p>
+          <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">Please sign in to continue</p>
           <Button
-            onClick={() => router.replace("/auth/signin")}
+            onClick={() => window.location.replace("/auth/signin")}
             className="bg-gradient-to-r from-orange-500 to-red-500"
           >
             Go to Sign In
