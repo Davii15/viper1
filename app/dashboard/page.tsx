@@ -1,4 +1,5 @@
 "use client"
+
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
@@ -63,6 +64,7 @@ export default function Dashboard() {
   const [currentPage, setCurrentPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [filters, setFilters] = useState({})
+  const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({})
 
   const router = useRouter()
 
@@ -80,23 +82,31 @@ export default function Dashboard() {
     handleSearch()
   }, [searchQuery, posts])
 
+  // ✅ Simplified auth check - let middleware handle protection
   const checkAuthAndLoadData = async () => {
     try {
+      console.log("🔍 Loading user data...")
       const currentUser = await getCurrentUser()
+
       if (!currentUser) {
-        router.replace("/auth/signin")
+        console.warn("⚠️ No user data available")
+        // ✅ Don't redirect here - let middleware handle it
         return
       }
+
+      console.log("✅ User data loaded:", currentUser.email)
       setUser(currentUser)
     } catch (error) {
-      console.error("Error checking auth:", error)
-      router.replace("/auth/signin")
+      console.error("❌ Error loading user data:", error)
+      // ✅ Don't redirect on error - let middleware handle protection
     } finally {
       setLoading(false)
     }
   }
 
   const loadPosts = async (page = 1, append = false) => {
+    if (!user) return // ✅ Guard clause
+
     if (!append) setPostsLoading(true)
 
     try {
@@ -125,6 +135,10 @@ export default function Dashboard() {
       setHasMore(postsResponse.hasMore)
     } catch (error) {
       console.error("Error loading posts:", error)
+      // ✅ Set empty array on error
+      if (!append) {
+        setPosts([])
+      }
     } finally {
       setPostsLoading(false)
       setRefreshing(false)
@@ -155,16 +169,25 @@ export default function Dashboard() {
     setFilteredPosts(filtered)
   }
 
-  const handleLike = async (postId, isLiked) => {
+  const handleLike = async (postId: string, isLiked: boolean) => {
+    if (!user) return
+
+    // Prevent multiple clicks
+    if (actionLoading[`like-${postId}`]) return
+
+    setActionLoading((prev) => ({ ...prev, [`like-${postId}`]: true }))
+
     try {
+      console.log(`${isLiked ? "Unliking" : "Liking"} post:`, postId)
+
       if (isLiked) {
         await unlikePost(postId)
       } else {
         await likePost(postId)
       }
 
-      // Update local state
-      const updatePosts = (posts) =>
+      // Update local state optimistically
+      const updatePosts = (posts: any[]) =>
         posts.map((post) =>
           post.id === postId
             ? {
@@ -177,46 +200,73 @@ export default function Dashboard() {
 
       setPosts(updatePosts)
       setFilteredPosts(updatePosts)
+
+      console.log(`✅ ${isLiked ? "Unliked" : "Liked"} post successfully`)
     } catch (error) {
-      console.error("Error toggling like:", error)
+      console.error("❌ Error toggling like:", error)
+      // Show error feedback to user
+      alert(`Failed to ${isLiked ? "unlike" : "like"} post. Please try again.`)
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [`like-${postId}`]: false }))
     }
   }
 
-  const handleBookmark = async (postId, isBookmarked) => {
+  const handleBookmark = async (postId: string, isBookmarked: boolean) => {
+    if (!user) return
+
+    // Prevent multiple clicks
+    if (actionLoading[`bookmark-${postId}`]) return
+
+    setActionLoading((prev) => ({ ...prev, [`bookmark-${postId}`]: true }))
+
     try {
+      console.log(`${isBookmarked ? "Unbookmarking" : "Bookmarking"} post:`, postId)
+
       if (isBookmarked) {
         await unbookmarkPost(postId)
       } else {
         await bookmarkPost(postId)
       }
 
-      // Update local state
-      const updatePosts = (posts) =>
+      // Update local state optimistically
+      const updatePosts = (posts: any[]) =>
         posts.map((post) => (post.id === postId ? { ...post, is_bookmarked: !isBookmarked } : post))
 
       setPosts(updatePosts)
       setFilteredPosts(updatePosts)
+
+      console.log(`✅ ${isBookmarked ? "Unbookmarked" : "Bookmarked"} post successfully`)
     } catch (error) {
-      console.error("Error toggling bookmark:", error)
+      console.error("❌ Error toggling bookmark:", error)
+      // Show error feedback to user
+      alert(`Failed to ${isBookmarked ? "unbookmark" : "bookmark"} post. Please try again.`)
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [`bookmark-${postId}`]: false }))
     }
   }
 
-  const handlePostView = async (postId) => {
+  const handlePostView = async (postId: string) => {
     try {
+      console.log("📊 Tracking post view:", postId)
       await trackPostView(postId)
+      console.log("✅ Post view tracked successfully")
       router.push(`/post/${postId}`)
     } catch (error) {
-      console.error("Error tracking view:", error)
+      console.error("❌ Error tracking view:", error)
+      // Still navigate even if tracking fails
       router.push(`/post/${postId}`)
     }
   }
 
   const handleSignOut = async () => {
     try {
+      console.log("🚪 Signing out...")
       await signOut()
-      router.replace("/auth/signin")
+      router.replace("/")
     } catch (error) {
       console.error("Error signing out:", error)
+      // Force redirect even if sign out fails
+      router.replace("/")
     }
   }
 
@@ -253,6 +303,7 @@ export default function Dashboard() {
     }
   }, [user])
 
+  // ✅ Show loading while user data loads
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
@@ -264,8 +315,24 @@ export default function Dashboard() {
     )
   }
 
+  // ✅ Show message if no user data (middleware should handle redirect)
   if (!user) {
-    return null
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
+          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <UserIcon className="w-8 h-8 text-orange-500" />
+          </div>
+          <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">Loading user data...</p>
+          <Button
+            onClick={() => router.replace("/auth/signin")}
+            className="bg-gradient-to-r from-orange-500 to-red-500"
+          >
+            Go to Sign In
+          </Button>
+        </motion.div>
+      </div>
+    )
   }
 
   return (
@@ -531,6 +598,8 @@ export default function Dashboard() {
                             onBookmark={handleBookmark}
                             onView={handlePostView}
                             layout="card"
+                            isLikeLoading={actionLoading[`like-${post.id}`]}
+                            isBookmarkLoading={actionLoading[`bookmark-${post.id}`]}
                           />
                         </motion.div>
                       ))}
@@ -549,6 +618,8 @@ export default function Dashboard() {
                           onBookmark={handleBookmark}
                           onView={handlePostView}
                           layout={layout}
+                          isLikeLoading={actionLoading[`like-${post.id}`]}
+                          isBookmarkLoading={actionLoading[`bookmark-${post.id}`]}
                         />
                       </motion.div>
                     ))

@@ -10,8 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { signIn, getCurrentUser } from "@/lib/auth"
+import { useRouter, useSearchParams } from "next/navigation"
+import { signIn, isAuthenticated } from "@/lib/auth"
 
 export default function SignIn() {
   const [email, setEmail] = useState("")
@@ -21,15 +21,17 @@ export default function SignIn() {
   const [error, setError] = useState("")
   const [checkingSession, setCheckingSession] = useState(true)
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   // Check if user is already authenticated
   useEffect(() => {
     const checkExistingSession = async () => {
       try {
-        const user = await getCurrentUser()
-        if (user) {
-          console.log("✅ User already authenticated, redirecting to dashboard")
-          router.replace("/dashboard")
+        const authenticated = await isAuthenticated()
+        if (authenticated) {
+          console.log("✅ User already authenticated, redirecting...")
+          const returnUrl = searchParams.get("returnUrl") || "/dashboard"
+          router.replace(returnUrl)
           return
         }
       } catch (error) {
@@ -40,7 +42,7 @@ export default function SignIn() {
     }
 
     checkExistingSession()
-  }, [router])
+  }, [router, searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,9 +54,12 @@ export default function SignIn() {
       const result = await signIn(email, password)
       console.log("✅ Login successful:", result)
 
-      // ✅ Force a hard redirect to ensure cookies are properly set
-      console.log("🔄 Redirecting to dashboard...")
-      window.location.href = "/dashboard"
+      // ✅ Get return URL or default to dashboard
+      const returnUrl = searchParams.get("returnUrl") || "/dashboard"
+      console.log("🔄 Redirecting to:", returnUrl)
+
+      // ✅ Use router.replace for better mobile compatibility
+      router.replace(returnUrl)
     } catch (err: any) {
       console.error("❌ Sign in failed:", err)
       setError(err.message || "Failed to sign in. Please check your credentials.")

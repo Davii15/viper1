@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { CheckCircle, AlertCircle, Loader2, ArrowRight } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { clearUserCache } from "@/lib/auth"
 
 export default function AuthCallback() {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading")
@@ -37,7 +38,7 @@ export default function AuthCallback() {
         console.log("🔄 Processing verification code...")
         setMessage("Processing verification code...")
 
-        // ✅ Simple session exchange - let Supabase handle the complexity
+        // ✅ Exchange code for session
         const { data, error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
 
         if (sessionError) {
@@ -50,6 +51,10 @@ export default function AuthCallback() {
         }
 
         console.log("✅ Email verified successfully for:", data.user.email)
+
+        // ✅ Clear any cached user data to force fresh load
+        clearUserCache()
+
         setStatus("success")
         setMessage("Karibu Posti! Your account is ready! 🌍")
 
@@ -59,7 +64,7 @@ export default function AuthCallback() {
           localStorage.removeItem("pendingVerificationEmail")
         }
 
-        // ✅ Simple redirect after 2 seconds
+        // ✅ Redirect after 2 seconds
         setTimeout(() => {
           console.log("🚀 Redirecting to dashboard...")
           router.replace("/dashboard")
