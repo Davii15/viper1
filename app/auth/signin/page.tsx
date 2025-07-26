@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { signIn, isAuthenticated } from "@/lib/auth"
+import { signIn } from "@/lib/auth"
 
 export default function SignIn() {
   const [email, setEmail] = useState("")
@@ -19,30 +19,8 @@ export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [checkingSession, setCheckingSession] = useState(true)
   const router = useRouter()
   const searchParams = useSearchParams()
-
-  // Check if user is already authenticated
-  useEffect(() => {
-    const checkExistingSession = async () => {
-      try {
-        const authenticated = await isAuthenticated()
-        if (authenticated) {
-          console.log("✅ User already authenticated, redirecting...")
-          const returnUrl = searchParams.get("returnUrl") || "/dashboard"
-          router.replace(returnUrl)
-          return
-        }
-      } catch (error) {
-        console.log("No existing session found")
-      } finally {
-        setCheckingSession(false)
-      }
-    }
-
-    checkExistingSession()
-  }, [router, searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,30 +36,14 @@ export default function SignIn() {
       const returnUrl = searchParams.get("returnUrl") || "/dashboard"
       console.log("🔄 Redirecting to:", returnUrl)
 
-      // ✅ Force page reload and redirect - more reliable for mobile
+      // ✅ Simple window redirect - no router involved
       window.location.href = returnUrl
     } catch (err: any) {
       console.error("❌ Sign in failed:", err)
       setError(err.message || "Failed to sign in. Please check your credentials.")
-    } finally {
-      setLoading(false)
+      setLoading(false) // Only set loading false on error
     }
-  }
-
-  // Show loading while checking existing session
-  if (checkingSession) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center text-white"
-        >
-          <div className="w-12 h-12 border-3 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-lg">Checking authentication...</p>
-        </motion.div>
-      </div>
-    )
+    // Don't set loading false on success - let the redirect happen
   }
 
   return (

@@ -3,6 +3,11 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 export async function middleware(req: NextRequest) {
+  // ✅ Skip middleware for auth callback to prevent loops
+  if (req.nextUrl.pathname === "/auth/callback") {
+    return NextResponse.next()
+  }
+
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
 
@@ -16,27 +21,22 @@ export async function middleware(req: NextRequest) {
       req.nextUrl.pathname.startsWith(path),
     )
 
-    // ✅ Redirect unauthenticated users from protected pages
+    // ✅ Only redirect if no session AND trying to access protected page
     if (isProtectedPage && !session) {
       const signInUrl = new URL("/auth/signin", req.url)
       signInUrl.searchParams.set("returnUrl", req.nextUrl.pathname)
       return NextResponse.redirect(signInUrl)
     }
 
-    // ✅ Redirect authenticated users away from auth pages
-    if (isAuthPage && session && !req.nextUrl.pathname.includes("/callback")) {
-      return NextResponse.redirect(new URL("/dashboard", req.url))
-    }
-
-    // ✅ Redirect authenticated users from home to dashboard
-    if (req.nextUrl.pathname === "/" && session) {
+    // ✅ Only redirect authenticated users from signin/signup (not callback)
+    if ((req.nextUrl.pathname === "/auth/signin" || req.nextUrl.pathname === "/auth/signup") && session) {
       return NextResponse.redirect(new URL("/dashboard", req.url))
     }
 
     return res
   } catch (error) {
     console.error("❌ Middleware error:", error)
-    return res
+    return NextResponse.next()
   }
 }
 
