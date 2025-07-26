@@ -1,0 +1,290 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+
+  /* African Sunset Theme */
+  [data-theme="african-sunset"] {
+    --background: 251 91% 95%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 24 95% 53%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 33 100% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 33 100% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 33 100% 96%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 33 82% 89%;
+    --input: 33 82% 89%;
+    --ring: 24 95% 53%;
+  }
+
+  /* Savanna Theme */
+  [data-theme="savanna"] {
+    --background: 48 100% 96%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 43 96% 56%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 48 100% 88%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 48 100% 88%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 48 100% 88%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 48 82% 82%;
+    --input: 48 82% 82%;
+    --ring: 43 96% 56%;
+  }
+
+  /* Forest Theme */
+  [data-theme="forest"] {
+    --background: 152 81% 96%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 158 64% 52%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 152 81% 91%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 152 81% 91%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 152 81% 91%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 152 61% 85%;
+    --input: 152 61% 85%;
+    --ring: 158 64% 52%;
+  }
+
+  /* Desert Theme */
+  [data-theme="desert"] {
+    --background: 39 100% 97%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 32 95% 44%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 39 100% 93%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 39 100% 93%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 39 100% 93%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 39 77% 88%;
+    --input: 39 77% 88%;
+    --ring: 32 95% 44%;
+  }
+
+  /* Ocean Theme */
+  [data-theme="ocean"] {
+    --background: 195 100% 95%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 199 89% 48%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 195 100% 90%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 195 100% 90%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 195 100% 90%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 195 77% 84%;
+    --input: 195 77% 84%;
+    --ring: 199 89% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .line-clamp-1 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+
+  .line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .line-clamp-3 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  /* African-inspired patterns */
+  .african-pattern {
+    background-image: radial-gradient(circle at 25% 25%, #f59e0b 2px, transparent 2px),
+      radial-gradient(circle at 75% 75%, #dc2626 2px, transparent 2px);
+    background-size: 50px 50px;
+  }
+
+  .kente-pattern {
+    background: linear-gradient(45deg, #f59e0b 25%, transparent 25%, transparent 75%, #f59e0b 75%),
+      linear-gradient(-45deg, #dc2626 25%, transparent 25%, transparent 75%, #dc2626 75%);
+    background-size: 20px 20px;
+  }
+
+  /* African-inspired gradients */
+  .gradient-sunset {
+    background: linear-gradient(135deg, #f59e0b 0%, #dc2626 50%, #7c2d12 100%);
+  }
+
+  .gradient-savanna {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  }
+
+  .gradient-forest {
+    background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+  }
+
+  /* Hover effects */
+  .hover-lift {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  }
+
+  /* African-inspired animations */
+  @keyframes ubuntu-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.8;
+      transform: scale(1.05);
+    }
+  }
+
+  .ubuntu-pulse {
+    animation: ubuntu-pulse 2s ease-in-out infinite;
+  }
+
+  /* Text shadows for better readability */
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .text-shadow-lg {
+    text-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* Custom scrollbar with African colors */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #fef3c7;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #f59e0b, #dc2626);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #d97706, #b91c1c);
+}
+
+/* Smooth animations with African flair */
+* {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Focus styles with warm colors */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+}
