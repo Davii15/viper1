@@ -3,10 +3,71 @@ import { createClient } from "@supabase/supabase-js"
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Legacy client for backward compatibility (keep this for now)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    flowType: "pkce",
+    // ✅ Mobile-optimized storage configuration
+    storage:
+      typeof window !== "undefined"
+        ? {
+            getItem: (key: string) => {
+              try {
+                return window.localStorage.getItem(key)
+              } catch (error) {
+                console.warn("LocalStorage getItem failed:", error)
+                return null
+              }
+            },
+            setItem: (key: string, value: string) => {
+              try {
+                window.localStorage.setItem(key, value)
+              } catch (error) {
+                console.warn("LocalStorage setItem failed:", error)
+              }
+            },
+            removeItem: (key: string) => {
+              try {
+                window.localStorage.removeItem(key)
+              } catch (error) {
+                console.warn("LocalStorage removeItem failed:", error)
+              }
+            },
+          }
+        : undefined,
+    storageKey: "posti-auth-token",
+    // ✅ Disable debug in production
+    debug: process.env.NODE_ENV === "development",
+  },
+  global: {
+    headers: {
+      "X-Client-Info": "posti-web-app",
+    },
+  },
+})
 
-// Types (keep all your existing types)
+// ✅ Simplified session management
+export const getSessionSafely = async () => {
+  try {
+    const { data, error } = await supabase.auth.getSession()
+    return { data, error }
+  } catch (error) {
+    console.error("❌ Session Error:", error)
+    return { data: { session: null }, error }
+  }
+}
+
+// ✅ Auth state change listener (only in development)
+if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+  supabase.auth.onAuthStateChange((event, session) => {
+    console.log("🔄 Auth Event:", event)
+    console.log("📋 Session:", session ? "EXISTS" : "NULL")
+  })
+}
+
+// Types (keeping existing types)
 export interface User {
   id: string
   email: string
