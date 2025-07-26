@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { signIn } from "@/lib/auth"
+import { supabase } from "@/lib/supabase"
 
 export default function SignIn() {
   const [email, setEmail] = useState("")
@@ -21,6 +21,21 @@ export default function SignIn() {
   const [error, setError] = useState("")
   const searchParams = useSearchParams()
 
+  // ✅ Check if already signed in on page load
+  useEffect(() => {
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (session) {
+        console.log("✅ Already signed in, redirecting...")
+        const returnUrl = searchParams.get("returnUrl") || "/dashboard"
+        window.location.href = returnUrl
+      }
+    }
+    checkSession()
+  }, [searchParams])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -28,18 +43,29 @@ export default function SignIn() {
 
     try {
       console.log("🚀 Attempting sign in...")
-      const result = await signIn(email, password)
-      console.log("✅ Login successful:", result)
 
-      // ✅ Wait a moment for session to be established
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-      // ✅ Get return URL or default to dashboard
+      if (error) {
+        console.error("❌ Sign in error:", error)
+        throw error
+      }
+
+      if (!data.user) {
+        throw new Error("No user data received")
+      }
+
+      console.log("✅ Sign in successful:", data.user.email)
+
+      // ✅ Simple redirect - no complex logic
       const returnUrl = searchParams.get("returnUrl") || "/dashboard"
       console.log("🔄 Redirecting to:", returnUrl)
 
-      // ✅ Force a complete page reload to ensure session is recognized
-      window.location.replace(returnUrl)
+      // ✅ Use location.href for immediate redirect
+      window.location.href = returnUrl
     } catch (err: any) {
       console.error("❌ Sign in failed:", err)
       setError(err.message || "Failed to sign in. Please check your credentials.")

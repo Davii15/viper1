@@ -33,7 +33,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { getCurrentUser, signOut } from "@/lib/auth"
+import { supabase } from "@/lib/supabase"
 import {
   getPosts,
   likePost,
@@ -82,27 +82,99 @@ export default function Dashboard() {
     handleSearch()
   }, [searchQuery, posts])
 
-  // ✅ Enhanced auth check with better error handling
+  // ✅ Simplified auth check - direct Supabase calls
   const checkAuthAndLoadData = async () => {
     try {
-      console.log("🔍 Loading user data...")
+      console.log("🔍 Checking authentication...")
 
-      // ✅ Add a small delay to ensure session is established
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession()
 
-      const currentUser = await getCurrentUser()
-
-      if (!currentUser) {
-        console.warn("⚠️ No user data available, redirecting to signin")
-        router.replace("/auth/signin")
+      if (error) {
+        console.error("❌ Session error:", error)
+        window.location.href = "/auth/signin"
         return
       }
 
-      console.log("✅ User data loaded:", currentUser.email)
-      setUser(currentUser)
+      if (!session?.user) {
+        console.warn("⚠️ No session found, redirecting to signin")
+        window.location.href = "/auth/signin"
+        return
+      }
+
+      console.log("✅ Session found for:", session.user.email)
+
+      // ✅ Get user profile directly
+      const { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", session.user.id)
+        .single()
+
+      let userData = profile
+
+      // ✅ Create profile if it doesn't exist
+      if (profileError && profileError.code === "PGRST116") {
+        console.log("📝 Creating user profile...")
+        const newProfile = {
+          id: session.user.id,
+          email: session.user.email!,
+          username: session.user.user_metadata.username || session.user.email!.split("@")[0],
+          full_name: session.user.user_metadata.full_name || "User",
+          country: session.user.user_metadata.country,
+          avatar_url: session.user.user_metadata.avatar_url,
+          verified: false,
+          created_at: session.user.created_at,
+          updated_at: new Date().toISOString(),
+          last_seen: new Date().toISOString(),
+        }
+
+        const { data: createdProfile, error: createError } = await supabase
+          .from("users")
+          .insert(newProfile)
+          .select()
+          .single()
+
+        if (createError) {
+          console.warn("⚠️ Profile creation failed, using session data:", createError)
+          userData = newProfile
+        } else {
+          userData = createdProfile
+        }
+      } else if (profileError) {
+        console.warn("⚠️ Profile fetch failed, using session data:", profileError)
+        userData = {
+          id: session.user.id,
+          email: session.user.email!,
+          username: session.user.user_metadata.username || session.user.email!.split("@")[0],
+          full_name: session.user.user_metadata.full_name || "User",
+          country: session.user.user_metadata.country,
+          avatar_url: session.user.user_metadata.avatar_url,
+          verified: false,
+          created_at: session.user.created_at,
+          updated_at: session.user.updated_at || session.user.created_at,
+          last_seen: new Date().toISOString(),
+        }
+      }
+
+      console.log("✅ User data loaded:", userData.email)
+      setUser(userData)
+
+      // ✅ Update last seen
+      supabase
+        .from("users")
+        .update({
+          last_seen: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", session.user.id)
+        .then(() => console.log("✅ Last seen updated"))
+        .catch((err) => console.warn("⚠️ Last seen update failed:", err))
     } catch (error) {
-      console.error("❌ Error loading user data:", error)
-      router.replace("/auth/signin")
+      console.error("❌ Error in checkAuthAndLoadData:", error)
+      window.location.href = "/auth/signin"
     } finally {
       setLoading(false)
     }
@@ -254,11 +326,11 @@ export default function Dashboard() {
   const handleSignOut = async () => {
     try {
       console.log("🚪 Signing out...")
-      await signOut()
-      window.location.replace("/")
+      await supabase.auth.signOut()
+      window.location.href = "/"
     } catch (error) {
       console.error("Error signing out:", error)
-      window.location.replace("/")
+      window.location.href = "/"
     }
   }
 
@@ -294,7 +366,7 @@ export default function Dashboard() {
     }
   }, [user])
 
-  // ✅ Show loading while user data loads
+  // ✅ Show loading while checking auth
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
@@ -306,7 +378,7 @@ export default function Dashboard() {
     )
   }
 
-  // ✅ Show message if no user data
+  // ✅ This should never show since we redirect above
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
@@ -314,13 +386,7 @@ export default function Dashboard() {
           <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <UserIcon className="w-8 h-8 text-orange-500" />
           </div>
-          <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">Please sign in to continue</p>
-          <Button
-            onClick={() => window.location.replace("/auth/signin")}
-            className="bg-gradient-to-r from-orange-500 to-red-500"
-          >
-            Go to Sign In
-          </Button>
+          <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">Redirecting to sign in...</p>
         </motion.div>
       </div>
     )
