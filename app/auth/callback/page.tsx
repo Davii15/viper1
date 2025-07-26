@@ -67,7 +67,7 @@ export default function AuthCallback() {
         // ✅ Redirect after 2 seconds
         setTimeout(() => {
           console.log("🚀 Redirecting to dashboard...")
-          router.replace("/dashboard")
+          window.location.href = "/dashboard"
         }, 2000)
       } catch (error: any) {
         console.error("❌ Auth callback error:", error)

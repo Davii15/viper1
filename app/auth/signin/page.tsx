@@ -58,8 +58,8 @@ export default function SignIn() {
       const returnUrl = searchParams.get("returnUrl") || "/dashboard"
       console.log("🔄 Redirecting to:", returnUrl)
 
-      // ✅ Use router.replace for better mobile compatibility
-      router.replace(returnUrl)
+      // ✅ Force page reload and redirect - more reliable for mobile
+      window.location.href = returnUrl
     } catch (err: any) {
       console.error("❌ Sign in failed:", err)
       setError(err.message || "Failed to sign in. Please check your credentials.")
