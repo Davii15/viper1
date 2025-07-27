@@ -119,3 +119,56 @@ export const clearUserCache = () => {
   // Simple cache clear function
   console.log("🧹 Clearing user cache")
 }
+
+export const signUp = async (email: string, password: string, metadata: any) => {
+  console.log("📝 Starting sign up process...")
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: metadata,
+      // 🎯 THIS is where the email link will go first
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    },
+  })
+
+  if (error) {
+    console.error("❌ Sign up error:", error)
+    throw error
+  }
+
+  // Store user data for profile creation after verification
+  if (typeof window !== "undefined") {
+    localStorage.setItem("pendingUserData", JSON.stringify(metadata))
+    localStorage.setItem("pendingVerificationEmail", email)
+  }
+
+  console.log("✅ Sign up successful, verification email sent")
+  return data
+}
+
+export const createUserProfile = async (userId: string, profileData: any) => {
+  console.log("👤 Creating user profile...")
+
+  const { data, error } = await supabase
+    .from("users")
+    .insert({
+      id: userId,
+      ...profileData,
+      verified: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_seen: new Date().toISOString(),
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error("❌ Profile creation error:", error)
+    throw error
+  }
+
+  console.log("✅ User profile created successfully")
+  return data
+}

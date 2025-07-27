@@ -1,11 +1,20 @@
-import { NextResponse } from "next/server"
+import { updateSession } from "@/lib/supabase/middleware"
 import type { NextRequest } from "next/server"
 
-export async function middleware(req: NextRequest) {
-  // ✅ COMPLETELY DISABLE middleware for now - let pages handle their own auth
-  return NextResponse.next()
+export async function middleware(request: NextRequest) {
+  // ✅ Re-enabled middleware with proper mobile support and loop prevention
+  return await updateSession(request)
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - api routes (handled separately)
+     */
+    "/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 }

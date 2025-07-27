@@ -1,4 +1,5 @@
 "use client"
+
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
@@ -8,6 +9,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   ArrowLeft,
   Edit,
@@ -21,13 +30,15 @@ import {
   Camera,
   CheckCircle,
   X,
+  MoreVertical,
+  Settings,
+  LogOut,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { getCurrentUser } from "@/lib/auth"
+import { supabase } from "@/lib/supabase"
 import { getUserPosts, getUserLikedPosts, getUserBookmarkedPosts } from "@/lib/posts"
 import { BlogCard } from "@/components/blog-card"
-import { createClient } from "@/lib/supabase/client"
 import type { Post, User } from "@/lib/supabase"
 
 export default function Profile() {
@@ -70,22 +81,90 @@ export default function Profile() {
 
   const checkAuthAndLoadData = async () => {
     try {
-      const currentUser = await getCurrentUser()
-      if (!currentUser) {
+      console.log("🔍 Checking authentication...")
+
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession()
+
+      if (error) {
+        console.error("❌ Session error:", error)
         router.replace("/auth/signin")
         return
       }
 
-      setUser(currentUser)
+      if (!session?.user) {
+        console.warn("⚠️ No session found, redirecting to signin")
+        router.replace("/auth/signin")
+        return
+      }
+
+      console.log("✅ Session found for:", session.user.email)
+
+      // ✅ Get user profile directly
+      const { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", session.user.id)
+        .single()
+
+      let userData = profile
+
+      // ✅ Create profile if it doesn't exist
+      if (profileError && profileError.code === "PGRST116") {
+        console.log("📝 Creating user profile...")
+        const newProfile = {
+          id: session.user.id,
+          email: session.user.email!,
+          username: session.user.user_metadata.username || session.user.email!.split("@")[0],
+          full_name: session.user.user_metadata.full_name || "User",
+          country: session.user.user_metadata.country,
+          avatar_url: session.user.user_metadata.avatar_url,
+          verified: false,
+          created_at: session.user.created_at,
+          updated_at: new Date().toISOString(),
+          last_seen: new Date().toISOString(),
+        }
+
+        const { data: createdProfile, error: createError } = await supabase
+          .from("users")
+          .insert(newProfile)
+          .select()
+          .single()
+
+        if (createError) {
+          console.warn("⚠️ Profile creation failed, using session data:", createError)
+          userData = newProfile
+        } else {
+          userData = createdProfile
+        }
+      } else if (profileError) {
+        console.warn("⚠️ Profile fetch failed, using session data:", profileError)
+        userData = {
+          id: session.user.id,
+          email: session.user.email!,
+          username: session.user.user_metadata.username || session.user.email!.split("@")[0],
+          full_name: session.user.user_metadata.full_name || "User",
+          country: session.user.user_metadata.country,
+          avatar_url: session.user.user_metadata.avatar_url,
+          verified: false,
+          created_at: session.user.created_at,
+          updated_at: session.user.updated_at || session.user.created_at,
+          last_seen: new Date().toISOString(),
+        }
+      }
+
+      setUser(userData)
       setEditForm({
-        full_name: currentUser.full_name || "",
-        bio: currentUser.bio || "",
-        location: currentUser.location || "",
-        website: currentUser.website || "",
-        avatar_url: currentUser.avatar_url || "",
+        full_name: userData.full_name || "",
+        bio: userData.bio || "",
+        location: userData.location || "",
+        website: userData.website || "",
+        avatar_url: userData.avatar_url || "",
       })
 
-      await Promise.all([loadUserPosts(currentUser.id), loadUserStats(currentUser.id)])
+      await Promise.all([loadUserPosts(userData.id), loadUserStats(userData.id)])
     } catch (error) {
       console.error("Error loading profile:", error)
       setError("Failed to load profile data")
@@ -108,8 +187,6 @@ export default function Profile() {
 
   const loadUserStats = async (userId: string) => {
     try {
-      const supabase = createClient()
-
       // Get user's posts and calculate stats
       const { data: postsData } = await supabase
         .from("posts")
@@ -147,8 +224,6 @@ export default function Profile() {
     setSuccess("")
 
     try {
-      const supabase = createClient()
-
       const { error: updateError } = await supabase
         .from("users")
         .update({
@@ -177,6 +252,17 @@ export default function Profile() {
       setError(error.message || "Failed to update profile")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    try {
+      console.log("🚪 Signing out...")
+      await supabase.auth.signOut()
+      window.location.href = "/"
+    } catch (error) {
+      console.error("Error signing out:", error)
+      window.location.href = "/"
     }
   }
 
@@ -267,10 +353,41 @@ export default function Profile() {
 
           <div className="flex items-center space-x-2">
             {!isEditing ? (
-              <Button onClick={() => setIsEditing(true)} variant="outline" size="sm">
-                <Edit className="w-4 h-4 mr-2" />
-                Edit Profile
-              </Button>
+              <>
+                <Button onClick={() => setIsEditing(true)} variant="outline" size="sm">
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit Profile
+                </Button>
+
+                {/* ✅ Profile Menu with Sign Out */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm">
+                      <MoreVertical className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-sm font-medium">{user.full_name}</p>
+                        <p className="text-xs text-gray-500">@{user.username}</p>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <Link href="/settings">
+                      <DropdownMenuItem>
+                        <Settings className="mr-2 h-4 w-4" />
+                        Settings
+                      </DropdownMenuItem>
+                    </Link>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSignOut} className="text-red-600 focus:text-red-600">
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sign out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
             ) : (
               <div className="flex space-x-2">
                 <Button onClick={() => setIsEditing(false)} variant="ghost" size="sm">

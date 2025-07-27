@@ -19,7 +19,6 @@ import {
   Bell,
   Search,
   Plus,
-  TrendingUp,
   BookOpen,
   Settings,
   LogOut,
@@ -50,6 +49,7 @@ import { LayoutSwitcher } from "@/components/layout-switcher"
 import { DashboardStats } from "@/components/dashboard-stats"
 import { ThemeSelector } from "@/components/theme-selector"
 import { DebugInfo } from "@/components/debug-info"
+import { TrendingTopics } from "@/components/trending-topics"
 
 export default function Dashboard() {
   const [user, setUser] = useState(null)
@@ -548,29 +548,8 @@ export default function Dashboard() {
             {/* Theme Selector */}
             <ThemeSelector />
 
-            {/* Trending Topics */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center">
-                  <TrendingUp className="w-5 h-5 mr-2" />
-                  Trending
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {["Ubuntu Philosophy", "African Tech", "Startup Stories", "Cultural Heritage", "Innovation"].map(
-                    (topic, index) => (
-                      <Button key={topic} variant="ghost" className="w-full justify-start text-sm">
-                        <span className="w-6 h-6 rounded-full bg-gradient-to-r from-purple-400 to-blue-400 flex items-center justify-center text-white text-xs mr-3">
-                          {index + 1}
-                        </span>
-                        {topic}
-                      </Button>
-                    ),
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            {/* ✅ Real Trending Topics Component */}
+            <TrendingTopics />
           </div>
 
           {/* Main Content */}
@@ -747,7 +726,7 @@ export default function Dashboard() {
             </Button>
           </Link>
           <Link href="/create">
-            <Button variant="ghost" className="flex flex-col items-center space-y-1 h-auto py-2">
+            <Button variant="ghost" className="flex flex-col items-center space-x-2 h-auto py-2">
               <Plus className="w-5 h-5" />
               <span className="text-xs">Create</span>
             </Button>

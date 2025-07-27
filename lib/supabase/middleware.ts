@@ -15,83 +15,48 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({
             request,
           })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, {
-              ...options,
-              // ✅ Mobile-friendly cookie settings
-              sameSite: "lax",
-              secure: process.env.NODE_ENV === "production",
-              httpOnly: false, // Allow client-side access for mobile apps
-            }),
-          )
+          cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
         },
       },
     },
   )
 
-  // IMPORTANT: Avoid writing any logic between createServerClient and
-  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
-  // issues with users being randomly logged out.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
-  try {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser()
+  const url = request.nextUrl.clone()
+  const pathname = url.pathname
 
-    // ✅ Add mobile debugging
-    const userAgent = request.headers.get("user-agent") || ""
-    const isMobile = /Mobile|Android|iPhone|iPad/i.test(userAgent)
+  // ✅ Protected routes that require authentication
+  const protectedRoutes = ["/dashboard", "/profile", "/create", "/settings"]
+  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route))
 
-    if (process.env.NODE_ENV === "development") {
-      console.log(`🔍 Middleware - ${isMobile ? "Mobile" : "Desktop"} - User:`, user ? user.email : "NULL")
-      if (error) console.log("❌ Auth error:", error)
-    }
+  // ✅ Auth routes that should redirect if already authenticated
+  const authRoutes = ["/auth/signin", "/auth/signup", "/auth/verify-email"]
+  const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route))
 
-    // Protected routes
-    const protectedPaths = ["/dashboard", "/profile", "/create", "/settings"]
-    const authPaths = ["/auth/signin", "/auth/signup", "/auth/forgot-password"]
-    const isProtectedPath = protectedPaths.some((path) => request.nextUrl.pathname.startsWith(path))
-    const isAuthPath = authPaths.some((path) => request.nextUrl.pathname.startsWith(path))
+  // ✅ NEVER redirect from callback - this is crucial!
+  const isCallbackRoute = pathname.startsWith("/auth/callback")
 
-    // ✅ Redirect unauthenticated users to signin
-    if (isProtectedPath && !user) {
-      const signInUrl = new URL("/auth/signin", request.url)
-      // Add return URL for better UX
-      signInUrl.searchParams.set("returnUrl", request.nextUrl.pathname)
-      return NextResponse.redirect(signInUrl)
-    }
-
-    // ✅ Redirect authenticated users away from auth pages
-    if (isAuthPath && user) {
-      // Check for return URL
-      const returnUrl = request.nextUrl.searchParams.get("returnUrl")
-      const redirectUrl = returnUrl && returnUrl !== "/auth/signin" ? returnUrl : "/dashboard"
-      return NextResponse.redirect(new URL(redirectUrl, request.url))
-    }
-
-    // ✅ Redirect authenticated users from home to dashboard
-    if (request.nextUrl.pathname === "/" && user) {
-      return NextResponse.redirect(new URL("/dashboard", request.url))
-    }
-
-    return supabaseResponse
-  } catch (error) {
-    // ✅ Handle middleware errors gracefully
-    console.error("❌ Middleware error:", error)
-
-    // For protected routes, redirect to sign-in on error
-    const protectedPaths = ["/dashboard", "/profile", "/create", "/settings"]
-    const isProtectedPath = protectedPaths.some((path) => request.nextUrl.pathname.startsWith(path))
-
-    if (isProtectedPath) {
-      return NextResponse.redirect(new URL("/auth/signin", request.url))
-    }
-
-    return supabaseResponse
+  // If user is not authenticated and trying to access protected route
+  if (!user && isProtectedRoute) {
+    console.log("🔒 Redirecting unauthenticated user to signin")
+    url.pathname = "/auth/signin"
+    return NextResponse.redirect(url)
   }
+
+  // If user is authenticated and trying to access auth routes (except callback)
+  if (user && isAuthRoute && !isCallbackRoute) {
+    console.log("✅ Redirecting authenticated user to dashboard")
+    url.pathname = "/dashboard"
+    return NextResponse.redirect(url)
+  }
+
+  // Allow all other routes (including callback)
+  return supabaseResponse
 }

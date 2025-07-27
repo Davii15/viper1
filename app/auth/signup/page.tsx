@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,8 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Mail, Lock, User, Globe, ArrowRight } from "lucide-react"
 import Link from "next/link"
-import { signUp } from "@/lib/auth"
 import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabase"
 
 const africanCountries = [
   "Algeria",
@@ -87,6 +86,26 @@ export default function SignUp() {
   const [error, setError] = useState("")
   const router = useRouter()
 
+  // ✅ Check if user is already signed in
+  useEffect(() => {
+    checkExistingSession()
+  }, [])
+
+  const checkExistingSession = async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (session?.user) {
+        console.log("✅ User already signed in, redirecting to dashboard")
+        window.location.href = "/dashboard"
+      }
+    } catch (error) {
+      console.error("Error checking session:", error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -105,13 +124,43 @@ export default function SignUp() {
     }
 
     try {
-      await signUp(formData.email, formData.password, {
-        username: formData.username,
-        full_name: formData.fullName,
-        country: formData.country,
+      console.log("📝 Starting sign up process...")
+
+      // ✅ Direct Supabase signup call
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            username: formData.username,
+            full_name: formData.fullName,
+            country: formData.country,
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
       })
-      router.push("/auth/verify-email")
+
+      if (signUpError) throw signUpError
+
+      // ✅ Store user data for profile creation after verification
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          "pendingUserData",
+          JSON.stringify({
+            username: formData.username,
+            full_name: formData.fullName,
+            country: formData.country,
+          }),
+        )
+        localStorage.setItem("pendingVerificationEmail", formData.email)
+      }
+
+      console.log("✅ Sign up successful, verification email sent")
+
+      // ✅ Simple redirect
+      window.location.href = "/auth/verify-email"
     } catch (err: any) {
+      console.error("❌ Sign up error:", err)
       setError(err.message || "Failed to create account")
     } finally {
       setLoading(false)

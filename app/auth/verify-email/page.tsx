@@ -9,7 +9,6 @@ import { Mail, ArrowLeft, CheckCircle, RefreshCw, AlertCircle } from "lucide-rea
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import { createUserProfile } from "@/lib/auth"
 
 export default function VerifyEmail() {
   const [verificationStatus, setVerificationStatus] = useState<"pending" | "success" | "error">("pending")
@@ -30,7 +29,7 @@ export default function VerifyEmail() {
         setMessage("Email verified successfully! Redirecting to dashboard...")
 
         setTimeout(() => {
-          router.push("/dashboard")
+          window.location.href = "/dashboard"
         }, 2000)
       }
     })
@@ -52,13 +51,31 @@ export default function VerifyEmail() {
       const storedUserData = localStorage.getItem("pendingUserData")
       const userData = storedUserData ? JSON.parse(storedUserData) : {}
 
-      // Create user profile
-      await createUserProfile(user.id, {
-        email: user.email,
-        username: userData.username || user.email.split("@")[0],
-        full_name: userData.full_name || "User",
-        country: userData.country,
-      })
+      // ✅ Create user profile directly with Supabase
+      console.log("👤 Creating user profile...")
+
+      const { data, error } = await supabase
+        .from("users")
+        .insert({
+          id: user.id,
+          email: user.email,
+          username: userData.username || user.email.split("@")[0],
+          full_name: userData.full_name || "User",
+          country: userData.country,
+          avatar_url: user.user_metadata.avatar_url,
+          verified: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          last_seen: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.warn("⚠️ Profile creation failed:", error)
+      } else {
+        console.log("✅ User profile created successfully")
+      }
 
       // Clear stored data
       localStorage.removeItem("pendingUserData")
@@ -97,7 +114,7 @@ export default function VerifyEmail() {
         type: "signup",
         email: email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/verify-email`,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       })
 

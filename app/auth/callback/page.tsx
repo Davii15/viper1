@@ -38,7 +38,7 @@ export default function AuthCallback() {
         console.log("🔄 Processing verification code...")
         setMessage("Processing verification code...")
 
-        // ✅ Exchange code for session
+        // ✅ Exchange code for session - THIS IS THE VERIFICATION STEP
         const { data, error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
 
         if (sessionError) {
@@ -52,6 +52,9 @@ export default function AuthCallback() {
 
         console.log("✅ Email verified successfully for:", data.user.email)
 
+        // ✅ Create user profile after verification
+        await createUserProfileAfterVerification(data.user)
+
         // ✅ Clear any cached user data to force fresh load
         clearUserCache()
 
@@ -64,7 +67,7 @@ export default function AuthCallback() {
           localStorage.removeItem("pendingVerificationEmail")
         }
 
-        // ✅ Redirect after 2 seconds
+        // 🎯 THIS IS WHERE WE REDIRECT TO DASHBOARD
         setTimeout(() => {
           console.log("🚀 Redirecting to dashboard...")
           window.location.href = "/dashboard"
@@ -73,6 +76,43 @@ export default function AuthCallback() {
         console.error("❌ Auth callback error:", error)
         setStatus("error")
         setMessage(error.message || "Verification failed. Please try again.")
+      }
+    }
+
+    // Helper function to create user profile
+    const createUserProfileAfterVerification = async (user: any) => {
+      try {
+        // Get stored user data from signup
+        const storedUserData = localStorage.getItem("pendingUserData")
+        const userData = storedUserData ? JSON.parse(storedUserData) : {}
+
+        console.log("👤 Creating user profile after verification...")
+
+        const { data, error } = await supabase
+          .from("users")
+          .insert({
+            id: user.id,
+            email: user.email,
+            username: userData.username || user.email.split("@")[0],
+            full_name: userData.full_name || "User",
+            country: userData.country,
+            avatar_url: user.user_metadata.avatar_url,
+            verified: true, // ✅ Mark as verified since email is confirmed
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            last_seen: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
+        if (error && error.code !== "23505") {
+          // Ignore duplicate key error (user already exists)
+          console.warn("⚠️ Profile creation failed:", error)
+        } else {
+          console.log("✅ User profile created successfully")
+        }
+      } catch (error) {
+        console.error("Error creating user profile:", error)
       }
     }
 
