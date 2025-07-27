@@ -9,110 +9,132 @@ import { Mail, ArrowLeft, CheckCircle, RefreshCw, AlertCircle } from "lucide-rea
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { getCurrentUser } from "@/lib/auth"
 
 export default function VerifyEmail() {
   const [verificationStatus, setVerificationStatus] = useState<"pending" | "success" | "error">("pending")
-  const [message, setMessage] = useState("")
+  const [message, setMessage] = useState("Check your email for the verification link")
   const [resending, setResending] = useState(false)
+  const [userEmail, setUserEmail] = useState<string>("")
   const router = useRouter()
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    // Handle auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_IN" && session?.user) {
-        // User just verified their email and signed in
-        await handleUserProfileCreation(session.user)
-        setVerificationStatus("success")
-        setMessage("Email verified successfully! Redirecting to dashboard...")
+    initializeVerificationPage()
+  }, [])
 
-        setTimeout(() => {
-          window.location.href = "/dashboard"
-        }, 2000)
-      }
-    })
-
-    // Check URL parameters for verification
-    const token_hash = searchParams.get("token_hash")
-    const type = searchParams.get("type")
-
-    if (token_hash && type === "signup") {
-      handleEmailVerification(token_hash)
-    }
-
-    return () => subscription.unsubscribe()
-  }, [searchParams, router])
-
-  const handleUserProfileCreation = async (user: any) => {
+  const initializeVerificationPage = async () => {
     try {
-      // Get stored user data
-      const storedUserData = localStorage.getItem("pendingUserData")
-      const userData = storedUserData ? JSON.parse(storedUserData) : {}
-
-      // ✅ Create user profile directly with Supabase
-      console.log("👤 Creating user profile...")
-
-      const { data, error } = await supabase
-        .from("users")
-        .insert({
-          id: user.id,
-          email: user.email,
-          username: userData.username || user.email.split("@")[0],
-          full_name: userData.full_name || "User",
-          country: userData.country,
-          avatar_url: user.user_metadata.avatar_url,
-          verified: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          last_seen: new Date().toISOString(),
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.warn("⚠️ Profile creation failed:", error)
-      } else {
-        console.log("✅ User profile created successfully")
+      // ✅ Check if user is already authenticated (cloud-based)
+      const user = await getCurrentUser()
+      if (user) {
+        console.log("✅ User already verified, redirecting to dashboard")
+        router.replace("/dashboard")
+        return
       }
 
-      // Clear stored data
-      localStorage.removeItem("pendingUserData")
-      localStorage.removeItem("pendingVerificationEmail")
+      // ✅ Get email from URL params (cloud-based approach)
+      const email = searchParams.get("email")
+      if (email) {
+        setUserEmail(email)
+        setMessage(`We've sent a verification link to ${email}. Please check your inbox.`)
+      } else {
+        setMessage("Please check your email for the verification link.")
+      }
+
+      // ✅ Listen for auth state changes (cloud-based)
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log("🔄 Auth state change:", event, session?.user?.email)
+
+        if (event === "SIGNED_IN" && session?.user) {
+          try {
+            setVerificationStatus("success")
+            setMessage("Email verified successfully! Setting up your global account...")
+
+            // ✅ Ensure user profile exists in cloud database
+            await ensureUserProfile(session.user)
+
+            setMessage("Karibu Posti! Your global account is ready! 🌍")
+
+            // ✅ Redirect to dashboard
+            setTimeout(() => {
+              router.replace("/dashboard")
+            }, 2000)
+          } catch (error) {
+            console.error("❌ Profile setup error:", error)
+            setVerificationStatus("error")
+            setMessage(
+              "Verification successful, but there was an issue setting up your profile. Please try signing in.",
+            )
+          }
+        }
+      })
+
+      return () => subscription.unsubscribe()
     } catch (error) {
-      console.error("Error creating user profile:", error)
+      console.error("❌ Verification page initialization error:", error)
+      setVerificationStatus("error")
+      setMessage("There was an issue loading the verification page. Please try again.")
     }
   }
 
-  const handleEmailVerification = async (token_hash: string) => {
+  // ✅ Ensure user profile exists in cloud database
+  const ensureUserProfile = async (user: any) => {
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        token_hash,
-        type: "signup",
-      })
+      console.log("👤 Ensuring user profile exists in cloud database...")
 
-      if (error) throw error
+      // Check if profile already exists
+      const { data: existingProfile } = await supabase.from("users").select("id").eq("id", user.id).single()
 
-      // The onAuthStateChange will handle the rest
-    } catch (error: any) {
-      setVerificationStatus("error")
-      setMessage(error.message || "Failed to verify email. Please try again.")
+      if (existingProfile) {
+        console.log("✅ User profile already exists in cloud database")
+        return
+      }
+
+      // Create user profile in cloud database
+      const profileData = {
+        id: user.id,
+        email: user.email,
+        username: user.user_metadata.username || user.email.split("@")[0],
+        full_name: user.user_metadata.full_name || "User",
+        country: user.user_metadata.country || null,
+        avatar_url: user.user_metadata.avatar_url || null,
+        bio: null,
+        location: null,
+        website: null,
+        verified: true, // Mark as verified since email is confirmed
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_seen: new Date().toISOString(),
+      }
+
+      const { error } = await supabase.from("users").insert(profileData)
+
+      if (error && error.code !== "23505") {
+        // Ignore duplicate key error
+        throw error
+      }
+
+      console.log("✅ User profile created in cloud database")
+    } catch (error) {
+      console.error("❌ Profile creation error:", error)
+      throw error
     }
   }
 
   const handleResendVerification = async () => {
+    if (!userEmail) {
+      setMessage("Please sign up again to receive a new verification email")
+      return
+    }
+
     setResending(true)
     try {
-      const email = localStorage.getItem("pendingVerificationEmail")
-      if (!email) {
-        setMessage("Please sign up again to receive a new verification email")
-        return
-      }
-
       const { error } = await supabase.auth.resend({
         type: "signup",
-        email: email,
+        email: userEmail,
         options: {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
@@ -120,8 +142,9 @@ export default function VerifyEmail() {
 
       if (error) throw error
 
-      setMessage("Verification email sent! Please check your inbox.")
+      setMessage("Verification email sent! Please check your inbox and spam folder.")
     } catch (error: any) {
+      console.error("❌ Resend error:", error)
       setMessage(error.message || "Failed to resend verification email")
     } finally {
       setResending(false)
@@ -130,7 +153,7 @@ export default function VerifyEmail() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* African Pattern Background */}
+      {/* Background Pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-10 left-10 text-6xl animate-pulse">📧</div>
         <div className="absolute top-20 right-20 text-4xl animate-bounce">✨</div>
@@ -167,28 +190,31 @@ export default function VerifyEmail() {
               {verificationStatus === "success"
                 ? "Karibu Posti! 🎉"
                 : verificationStatus === "error"
-                  ? "Verification Failed"
+                  ? "Verification Issue"
                   : "Check Your Email"}
             </CardTitle>
           </CardHeader>
 
           <CardContent className="text-center space-y-6">
+            <p className="text-gray-600">{message}</p>
+
             {verificationStatus === "pending" && (
               <>
-                <div className="space-y-4">
-                  <p className="text-gray-600">
-                    We've sent you a verification link. Please check your email and click the link to activate your
-                    Posti account.
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-blue-800 mb-2">🌍 Global Account Activation</h4>
+                  <p className="text-sm text-blue-700">
+                    Once verified, you can access your account from any device, anywhere in the world!
                   </p>
+                </div>
 
-                  <div className="bg-gradient-to-r from-orange-50 to-red-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-orange-800 mb-2">📧 Check these folders:</h4>
-                    <ul className="text-sm text-orange-700 space-y-1">
-                      <li>• Primary inbox</li>
-                      <li>• Spam/Junk folder</li>
-                      <li>• Promotions tab (Gmail)</li>
-                    </ul>
-                  </div>
+                <div className="bg-gradient-to-r from-orange-50 to-red-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-orange-800 mb-2">📧 Check these folders:</h4>
+                  <ul className="text-sm text-orange-700 space-y-1">
+                    <li>• Primary inbox</li>
+                    <li>• Spam/Junk folder</li>
+                    <li>• Promotions tab (Gmail)</li>
+                    <li>• Social tab (Gmail)</li>
+                  </ul>
                 </div>
 
                 <div className="space-y-3">
@@ -197,7 +223,7 @@ export default function VerifyEmail() {
                     variant="outline"
                     className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200"
                     onClick={handleResendVerification}
-                    disabled={resending}
+                    disabled={resending || !userEmail}
                   >
                     {resending ? (
                       <>
@@ -216,20 +242,30 @@ export default function VerifyEmail() {
             )}
 
             {verificationStatus === "success" && (
-              <div className="space-y-4">
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 0.2 }}
-                  className="text-6xl"
-                >
-                  🎉
-                </motion.div>
-                <p className="text-green-600 font-semibold">
-                  Welcome to the Ubuntu community! Your account is now active.
-                </p>
-                <p className="text-gray-600">You'll be redirected to your dashboard shortly...</p>
-              </div>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.3 }}
+                className="space-y-4"
+              >
+                <div className="text-6xl">🎉</div>
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg">
+                  <p className="text-green-800 font-semibold">Welcome to the global Ubuntu community!</p>
+                  <p className="text-green-600 text-sm mt-1">
+                    Your account is now accessible from anywhere in the world
+                  </p>
+                </div>
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-blue-800 mb-2">🌍 What you can do now:</h4>
+                  <ul className="text-sm text-blue-700 space-y-1">
+                    <li>• Write blogs from any device</li>
+                    <li>• Access your account from internet cafes</li>
+                    <li>• No need to carry your device everywhere</li>
+                    <li>• Your stories are safely stored in the cloud</li>
+                  </ul>
+                </div>
+                <p className="text-sm text-gray-500">Redirecting to your dashboard...</p>
+              </motion.div>
             )}
 
             {verificationStatus === "error" && (
@@ -242,9 +278,19 @@ export default function VerifyEmail() {
                     variant="outline"
                     className="w-full bg-transparent hover:bg-red-50 hover:text-red-600 hover:border-red-200"
                     onClick={handleResendVerification}
-                    disabled={resending}
+                    disabled={resending || !userEmail}
                   >
-                    Resend Verification Email
+                    {resending ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="w-4 h-4 mr-2" />
+                        Resend Verification Email
+                      </>
+                    )}
                   </Button>
                   <Link href="/auth/signup">
                     <Button variant="ghost" className="w-full">
@@ -253,12 +299,6 @@ export default function VerifyEmail() {
                   </Link>
                 </div>
               </div>
-            )}
-
-            {message && verificationStatus === "pending" && (
-              <Alert className="border-blue-200 bg-blue-50">
-                <AlertDescription className="text-blue-700">{message}</AlertDescription>
-              </Alert>
             )}
 
             <Link href="/auth/signin">

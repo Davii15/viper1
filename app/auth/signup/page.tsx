@@ -9,10 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Mail, Lock, User, Globe, ArrowRight } from "lucide-react"
+import { Eye, EyeOff, Mail, Lock, User, Globe, ArrowRight, CheckCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { signUp, getCurrentUser } from "@/lib/auth"
 
 const africanCountries = [
   "Algeria",
@@ -84,25 +84,29 @@ export default function SignUp() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
   const router = useRouter()
 
-  // ✅ Check if user is already signed in
+  // ✅ Check if user is already authenticated (cloud-based)
   useEffect(() => {
     checkExistingSession()
   }, [])
 
   const checkExistingSession = async () => {
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+      setCheckingAuth(true)
+      const user = await getCurrentUser()
 
-      if (session?.user) {
-        console.log("✅ User already signed in, redirecting to dashboard")
-        window.location.href = "/dashboard"
+      if (user) {
+        console.log("✅ User already authenticated, redirecting to dashboard")
+        router.replace("/dashboard")
+        return
       }
     } catch (error) {
       console.error("Error checking session:", error)
+    } finally {
+      setCheckingAuth(false)
     }
   }
 
@@ -110,6 +114,14 @@ export default function SignUp() {
     e.preventDefault()
     setLoading(true)
     setError("")
+    setSuccess(false)
+
+    // ✅ Comprehensive validation
+    if (!formData.email || !formData.username || !formData.fullName || !formData.password) {
+      setError("Please fill in all required fields")
+      setLoading(false)
+      return
+    }
 
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords don't match")
@@ -123,45 +135,57 @@ export default function SignUp() {
       return
     }
 
+    if (formData.username.length < 3) {
+      setError("Username must be at least 3 characters")
+      setLoading(false)
+      return
+    }
+
+    // ✅ Username validation
+    if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
+      setError("Username can only contain letters, numbers, and underscores")
+      setLoading(false)
+      return
+    }
+
     try {
-      console.log("📝 Starting sign up process...")
+      console.log("📝 Starting cloud-based signup...")
 
-      // ✅ Direct Supabase signup call
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            username: formData.username,
-            full_name: formData.fullName,
-            country: formData.country,
-          },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-
-      if (signUpError) throw signUpError
-
-      // ✅ Store user data for profile creation after verification
-      if (typeof window !== "undefined") {
-        localStorage.setItem(
-          "pendingUserData",
-          JSON.stringify({
-            username: formData.username,
-            full_name: formData.fullName,
-            country: formData.country,
-          }),
-        )
-        localStorage.setItem("pendingVerificationEmail", formData.email)
+      const metadata = {
+        username: formData.username.trim().toLowerCase(),
+        full_name: formData.fullName.trim(),
+        country: formData.country,
       }
 
-      console.log("✅ Sign up successful, verification email sent")
+      // ✅ Pure cloud signup - no localStorage needed
+      await signUp(formData.email.trim(), formData.password, metadata)
 
-      // ✅ Simple redirect
-      window.location.href = "/auth/verify-email"
+      setSuccess(true)
+      console.log("✅ Cloud signup successful - redirecting to verification")
+
+      // ✅ Redirect to verification page
+      setTimeout(() => {
+        router.push(`/auth/verify-email?email=${encodeURIComponent(formData.email)}`)
+      }, 2000)
     } catch (err: any) {
-      console.error("❌ Sign up error:", err)
-      setError(err.message || "Failed to create account")
+      console.error("❌ Cloud signup error:", err)
+
+      // ✅ Better error handling
+      let errorMessage = "Failed to create account"
+
+      if (err.message?.includes("already registered") || err.message?.includes("already been registered")) {
+        errorMessage = "This email is already registered. Try signing in instead."
+      } else if (err.message?.includes("invalid email")) {
+        errorMessage = "Please enter a valid email address"
+      } else if (err.message?.includes("weak password")) {
+        errorMessage = "Password is too weak. Please use a stronger password."
+      } else if (err.message?.includes("rate limit")) {
+        errorMessage = "Too many signup attempts. Please wait a moment and try again."
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -169,11 +193,26 @@ export default function SignUp() {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+    // ✅ Clear error when user starts typing
+    if (error) setError("")
+    if (success) setSuccess(false)
+  }
+
+  // ✅ Show loading state while checking authentication
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4">
+        <div className="text-white text-center">
+          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p>Checking cloud authentication...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* African Pattern Background */}
+      {/* Background Pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-10 left-10 text-6xl animate-pulse">🌍</div>
         <div className="absolute top-20 right-20 text-4xl animate-bounce">🦁</div>
@@ -197,7 +236,10 @@ export default function SignUp() {
             <CardTitle className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
               Karibu Posti!
             </CardTitle>
-            <p className="text-gray-600 mt-2">Join the African storytelling community</p>
+            <p className="text-gray-600 mt-2">Create your global Ubuntu storytelling account</p>
+            <div className="bg-blue-50 p-3 rounded-lg mt-4">
+              <p className="text-blue-800 text-sm font-medium">🌍 Access from ANY device, ANYWHERE in the world!</p>
+            </div>
           </CardHeader>
 
           <CardContent className="space-y-6">
@@ -207,10 +249,19 @@ export default function SignUp() {
               </Alert>
             )}
 
+            {success && (
+              <Alert className="border-green-200 bg-green-50">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <AlertDescription className="text-green-700">
+                  Account created successfully! Check your email for verification.
+                </AlertDescription>
+              </Alert>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
+                  <Label htmlFor="fullName">Full Name *</Label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <Input
@@ -220,24 +271,29 @@ export default function SignUp() {
                       onChange={(e) => handleInputChange("fullName", e.target.value)}
                       className="pl-10"
                       required
+                      disabled={loading}
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
+                  <Label htmlFor="username">Username *</Label>
                   <Input
                     id="username"
                     placeholder="johndoe"
                     value={formData.username}
-                    onChange={(e) => handleInputChange("username", e.target.value)}
+                    onChange={(e) => handleInputChange("username", e.target.value.toLowerCase())}
                     required
+                    disabled={loading}
+                    minLength={3}
+                    pattern="[a-zA-Z0-9_]+"
+                    title="Username can only contain letters, numbers, and underscores"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">Email Address *</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
@@ -248,6 +304,7 @@ export default function SignUp() {
                     onChange={(e) => handleInputChange("email", e.target.value)}
                     className="pl-10"
                     required
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -256,9 +313,13 @@ export default function SignUp() {
                 <Label htmlFor="country">Country</Label>
                 <div className="relative">
                   <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 z-10" />
-                  <Select value={formData.country} onValueChange={(value) => handleInputChange("country", value)}>
+                  <Select
+                    value={formData.country}
+                    onValueChange={(value) => handleInputChange("country", value)}
+                    disabled={loading}
+                  >
                     <SelectTrigger className="pl-10">
-                      <SelectValue placeholder="Select your country" />
+                      <SelectValue placeholder="Select your country (optional)" />
                     </SelectTrigger>
                     <SelectContent>
                       {africanCountries.map((country) => (
@@ -272,22 +333,25 @@ export default function SignUp() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Password *</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Create a password"
+                    placeholder="Create a strong password"
                     value={formData.password}
                     onChange={(e) => handleInputChange("password", e.target.value)}
                     className="pl-10 pr-10"
                     required
+                    disabled={loading}
+                    minLength={6}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    disabled={loading}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -295,7 +359,7 @@ export default function SignUp() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Label htmlFor="confirmPassword">Confirm Password *</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
@@ -306,11 +370,13 @@ export default function SignUp() {
                     onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
                     className="pl-10 pr-10"
                     required
+                    disabled={loading}
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    disabled={loading}
                   >
                     {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -320,16 +386,21 @@ export default function SignUp() {
               <Button
                 type="submit"
                 className="w-full bg-gradient-to-r from-orange-500 via-red-500 to-purple-600 hover:from-orange-600 hover:via-red-600 hover:to-purple-700 text-white py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
-                disabled={loading}
+                disabled={loading || success}
               >
                 {loading ? (
                   <div className="flex items-center space-x-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Creating account...</span>
+                    <span>Creating your global account...</span>
+                  </div>
+                ) : success ? (
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Account Created! Check Email</span>
                   </div>
                 ) : (
                   <div className="flex items-center space-x-2">
-                    <span>Jisajili - Sign Up</span>
+                    <span>Jisajili - Create Global Account</span>
                     <ArrowRight className="w-4 h-4" />
                   </div>
                 )}
@@ -347,10 +418,20 @@ export default function SignUp() {
               </div>
 
               <Link href="/auth/signin" className="mt-4 block">
-                <Button variant="outline" className="w-full bg-transparent">
+                <Button variant="outline" className="w-full bg-transparent" disabled={loading}>
                   Ingia - Sign In
                 </Button>
               </Link>
+            </div>
+
+            <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-green-800 mb-2">🌍 Global Access Benefits:</h4>
+              <ul className="text-sm text-green-700 space-y-1">
+                <li>• Access from any device, anywhere in the world</li>
+                <li>• No need to carry your device - just remember your email & password</li>
+                <li>• Write blogs from internet cafes, libraries, friend's computers</li>
+                <li>• Your account is stored safely in the cloud</li>
+              </ul>
             </div>
           </CardContent>
         </Card>

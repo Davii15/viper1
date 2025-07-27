@@ -4,10 +4,10 @@ import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { CheckCircle, AlertCircle, Loader2, ArrowRight } from "lucide-react"
+import { CheckCircle, AlertCircle, Loader2, ArrowRight, Globe } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import { clearUserCache } from "@/lib/auth"
+import { createUserProfile } from "@/lib/auth"
 
 export default function AuthCallback() {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading")
@@ -16,118 +16,128 @@ export default function AuthCallback() {
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    const handleAuthCallback = async () => {
-      try {
-        console.log("🔄 Starting auth callback process...")
+    handleAuthCallback()
+  }, [searchParams])
 
-        const code = searchParams.get("code")
-        const error = searchParams.get("error")
-        const errorDescription = searchParams.get("error_description")
+  const handleAuthCallback = async () => {
+    try {
+      console.log("🔄 Starting cloud-based auth callback...")
 
-        // Check for errors first
-        if (error) {
-          console.error("❌ Auth callback error:", error, errorDescription)
-          throw new Error(errorDescription || error)
-        }
+      const code = searchParams.get("code")
+      const error = searchParams.get("error")
+      const errorDescription = searchParams.get("error_description")
 
-        if (!code) {
-          console.error("❌ No verification code found")
-          throw new Error("No verification code found. Please try signing up again.")
-        }
-
-        console.log("🔄 Processing verification code...")
-        setMessage("Processing verification code...")
-
-        // ✅ Exchange code for session - THIS IS THE VERIFICATION STEP
-        const { data, error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
-
-        if (sessionError) {
-          console.error("❌ Session exchange error:", sessionError)
-          throw sessionError
-        }
-
-        if (!data.user) {
-          throw new Error("No user data received after verification")
-        }
-
-        console.log("✅ Email verified successfully for:", data.user.email)
-
-        // ✅ Create user profile after verification
-        await createUserProfileAfterVerification(data.user)
-
-        // ✅ Clear any cached user data to force fresh load
-        clearUserCache()
-
-        setStatus("success")
-        setMessage("Karibu Posti! Your account is ready! 🌍")
-
-        // ✅ Clean up stored data
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("pendingUserData")
-          localStorage.removeItem("pendingVerificationEmail")
-        }
-
-        // 🎯 THIS IS WHERE WE REDIRECT TO DASHBOARD
-        setTimeout(() => {
-          console.log("🚀 Redirecting to dashboard...")
-          window.location.href = "/dashboard"
-        }, 2000)
-      } catch (error: any) {
-        console.error("❌ Auth callback error:", error)
-        setStatus("error")
-        setMessage(error.message || "Verification failed. Please try again.")
+      // ✅ Check for errors first
+      if (error) {
+        console.error("❌ Auth callback error:", error, errorDescription)
+        throw new Error(errorDescription || error)
       }
+
+      if (!code) {
+        console.error("❌ No verification code found")
+        throw new Error("No verification code found. Please try signing up again.")
+      }
+
+      console.log("🔄 Processing verification code...")
+      setMessage("Processing verification code...")
+
+      // ✅ Exchange code for session with cloud verification
+      const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
+
+      if (sessionError) {
+        console.error("❌ Session exchange error:", sessionError)
+        throw sessionError
+      }
+
+      if (!sessionData?.user) {
+        throw new Error("No user data received after verification")
+      }
+
+      console.log("✅ Email verified successfully for:", sessionData.user.email)
+
+      // ✅ Create/update user profile in cloud database
+      setMessage("Setting up your global account...")
+      await handleUserProfileCreation(sessionData.user)
+
+      setStatus("success")
+      setMessage("Karibu Posti! Your global account is ready! 🌍")
+
+      // ✅ Redirect to dashboard
+      setTimeout(() => {
+        console.log("🚀 Redirecting to dashboard...")
+        router.replace("/dashboard")
+      }, 3000)
+    } catch (error: any) {
+      console.error("❌ Auth callback error:", error)
+      setStatus("error")
+
+      // ✅ Better error messages
+      let errorMessage = "Verification failed. Please try again."
+
+      if (error.message?.includes("expired")) {
+        errorMessage = "Verification link has expired. Please request a new one."
+      } else if (error.message?.includes("invalid")) {
+        errorMessage = "Invalid verification link. Please sign up again."
+      } else if (error.message?.includes("network")) {
+        errorMessage = "Network error. Please check your connection and try again."
+      } else if (error.message?.includes("already_confirmed")) {
+        errorMessage = "Email already verified. You can sign in now."
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+
+      setMessage(errorMessage)
     }
+  }
 
-    // Helper function to create user profile
-    const createUserProfileAfterVerification = async (user: any) => {
-      try {
-        // Get stored user data from signup
-        const storedUserData = localStorage.getItem("pendingUserData")
-        const userData = storedUserData ? JSON.parse(storedUserData) : {}
+  // ✅ Handle user profile creation in cloud database
+  const handleUserProfileCreation = async (user: any) => {
+    try {
+      console.log("👤 Creating/updating user profile in cloud database...")
 
-        console.log("👤 Creating user profile after verification...")
+      // ✅ Check if profile already exists
+      const { data: existingProfile } = await supabase.from("users").select("id, verified").eq("id", user.id).single()
 
-        const { data, error } = await supabase
+      if (existingProfile) {
+        // ✅ Update existing profile to mark as verified
+        const { error: updateError } = await supabase
           .from("users")
-          .insert({
-            id: user.id,
-            email: user.email,
-            username: userData.username || user.email.split("@")[0],
-            full_name: userData.full_name || "User",
-            country: userData.country,
-            avatar_url: user.user_metadata.avatar_url,
-            verified: true, // ✅ Mark as verified since email is confirmed
-            created_at: new Date().toISOString(),
+          .update({
+            verified: true,
             updated_at: new Date().toISOString(),
             last_seen: new Date().toISOString(),
           })
-          .select()
-          .single()
+          .eq("id", user.id)
 
-        if (error && error.code !== "23505") {
-          // Ignore duplicate key error (user already exists)
-          console.warn("⚠️ Profile creation failed:", error)
+        if (updateError) {
+          console.warn("⚠️ Profile update failed:", updateError)
         } else {
-          console.log("✅ User profile created successfully")
+          console.log("✅ User profile updated in cloud database")
         }
-      } catch (error) {
-        console.error("Error creating user profile:", error)
+        return
       }
-    }
 
-    // ✅ Only run if we have search params
-    if (searchParams.toString()) {
-      handleAuthCallback()
-    } else {
-      setStatus("error")
-      setMessage("Invalid verification link. Please sign up again.")
+      // ✅ Create new profile in cloud database
+      const profileData = {
+        email: user.email,
+        username: user.user_metadata.username || user.email.split("@")[0],
+        full_name: user.user_metadata.full_name || "User",
+        country: user.user_metadata.country || null,
+        avatar_url: user.user_metadata.avatar_url || null,
+      }
+
+      await createUserProfile(user.id, profileData)
+      console.log("✅ User profile created in cloud database")
+    } catch (error) {
+      console.error("❌ Profile creation error:", error)
+      // Don't throw error here - user is verified, profile creation is secondary
+      console.warn("⚠️ Continuing without profile creation...")
     }
-  }, [searchParams, router])
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* African Pattern Background */}
+      {/* Background Pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-10 left-10 text-6xl animate-pulse">🌍</div>
         <div className="absolute top-20 right-20 text-4xl animate-bounce">✨</div>
@@ -184,7 +194,7 @@ export default function AuthCallback() {
                     style={{ animationDelay: "0.2s" }}
                   ></div>
                 </div>
-                <p className="text-sm text-gray-500">Setting up your Ubuntu experience...</p>
+                <p className="text-sm text-gray-500">Setting up your global Ubuntu account...</p>
               </div>
             )}
 
@@ -198,10 +208,21 @@ export default function AuthCallback() {
               >
                 <div className="text-6xl">🌍</div>
                 <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg">
-                  <p className="text-green-800 font-semibold">Welcome to the Ubuntu community!</p>
-                  <p className="text-green-600 text-sm mt-1">Your storytelling journey begins now</p>
+                  <p className="text-green-800 font-semibold">Welcome to the global Ubuntu community!</p>
+                  <p className="text-green-600 text-sm mt-1">
+                    Your account is now accessible from anywhere in the world
+                  </p>
                 </div>
-                <p className="text-sm text-gray-500">Redirecting to your dashboard in 2 seconds...</p>
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-blue-800 mb-2">🌍 What you can do now:</h4>
+                  <ul className="text-sm text-blue-700 space-y-1">
+                    <li>• Write blogs from any device, anywhere</li>
+                    <li>• Access your account from internet cafes</li>
+                    <li>• No need to carry your device everywhere</li>
+                    <li>• Your stories are safely stored in the cloud</li>
+                  </ul>
+                </div>
+                <p className="text-sm text-gray-500">Redirecting to your dashboard...</p>
               </motion.div>
             )}
 
@@ -216,14 +237,15 @@ export default function AuthCallback() {
                     onClick={() => router.replace("/auth/signup")}
                     className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
                   >
-                    <ArrowRight className="w-4 h-4 mr-2" />
-                    Sign Up Again
+                    <Globe className="w-4 h-4 mr-2" />
+                    Create Global Account
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => router.replace("/auth/signin")}
                     className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200"
                   >
+                    <ArrowRight className="w-4 h-4 mr-2" />
                     Try Signing In
                   </Button>
                 </div>
