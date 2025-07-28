@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -32,7 +32,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { useAuth, useRequireAuth } from "@/components/auth-provider"
 import {
   getPosts,
   likePost,
@@ -52,13 +52,15 @@ import { DebugInfo } from "@/components/debug-info"
 import { TrendingTopics } from "@/components/trending-topics"
 
 export default function Dashboard() {
-  const [user, setUser] = useState(null)
+  // ✅ Use the new auth system
+  const { user, loading: authLoading } = useRequireAuth()
+  const { signOut } = useAuth()
+
   const [posts, setPosts] = useState([])
   const [filteredPosts, setFilteredPosts] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("for-you")
   const [layout, setLayout] = useState<"magazine" | "card" | "minimal">("magazine")
-  const [loading, setLoading] = useState(true)
   const [postsLoading, setPostsLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -69,10 +71,6 @@ export default function Dashboard() {
   const router = useRouter()
 
   useEffect(() => {
-    checkAuthAndLoadData()
-  }, [])
-
-  useEffect(() => {
     if (user) {
       refreshPosts()
     }
@@ -81,104 +79,6 @@ export default function Dashboard() {
   useEffect(() => {
     handleSearch()
   }, [searchQuery, posts])
-
-  // ✅ Simplified auth check - direct Supabase calls
-  const checkAuthAndLoadData = async () => {
-    try {
-      console.log("🔍 Checking authentication...")
-
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession()
-
-      if (error) {
-        console.error("❌ Session error:", error)
-        window.location.href = "/auth/signin"
-        return
-      }
-
-      if (!session?.user) {
-        console.warn("⚠️ No session found, redirecting to signin")
-        window.location.href = "/auth/signin"
-        return
-      }
-
-      console.log("✅ Session found for:", session.user.email)
-
-      // ✅ Get user profile directly
-      const { data: profile, error: profileError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", session.user.id)
-        .single()
-
-      let userData = profile
-
-      // ✅ Create profile if it doesn't exist
-      if (profileError && profileError.code === "PGRST116") {
-        console.log("📝 Creating user profile...")
-        const newProfile = {
-          id: session.user.id,
-          email: session.user.email!,
-          username: session.user.user_metadata.username || session.user.email!.split("@")[0],
-          full_name: session.user.user_metadata.full_name || "User",
-          country: session.user.user_metadata.country,
-          avatar_url: session.user.user_metadata.avatar_url,
-          verified: false,
-          created_at: session.user.created_at,
-          updated_at: new Date().toISOString(),
-          last_seen: new Date().toISOString(),
-        }
-
-        const { data: createdProfile, error: createError } = await supabase
-          .from("users")
-          .insert(newProfile)
-          .select()
-          .single()
-
-        if (createError) {
-          console.warn("⚠️ Profile creation failed, using session data:", createError)
-          userData = newProfile
-        } else {
-          userData = createdProfile
-        }
-      } else if (profileError) {
-        console.warn("⚠️ Profile fetch failed, using session data:", profileError)
-        userData = {
-          id: session.user.id,
-          email: session.user.email!,
-          username: session.user.user_metadata.username || session.user.email!.split("@")[0],
-          full_name: session.user.user_metadata.full_name || "User",
-          country: session.user.user_metadata.country,
-          avatar_url: session.user.user_metadata.avatar_url,
-          verified: false,
-          created_at: session.user.created_at,
-          updated_at: session.user.updated_at || session.user.created_at,
-          last_seen: new Date().toISOString(),
-        }
-      }
-
-      console.log("✅ User data loaded:", userData.email)
-      setUser(userData)
-
-      // ✅ Update last seen
-      supabase
-        .from("users")
-        .update({
-          last_seen: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", session.user.id)
-        .then(() => console.log("✅ Last seen updated"))
-        .catch((err) => console.warn("⚠️ Last seen update failed:", err))
-    } catch (error) {
-      console.error("❌ Error in checkAuthAndLoadData:", error)
-      window.location.href = "/auth/signin"
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const loadPosts = async (page = 1, append = false) => {
     if (!user) return
@@ -323,17 +223,6 @@ export default function Dashboard() {
     }
   }
 
-  const handleSignOut = async () => {
-    try {
-      console.log("🚪 Signing out...")
-      await supabase.auth.signOut()
-      window.location.href = "/"
-    } catch (error) {
-      console.error("Error signing out:", error)
-      window.location.href = "/"
-    }
-  }
-
   const handleRefresh = () => {
     setRefreshing(true)
     loadPosts()
@@ -367,7 +256,7 @@ export default function Dashboard() {
   }, [user])
 
   // ✅ Show loading while checking auth
-  if (loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
@@ -378,18 +267,9 @@ export default function Dashboard() {
     )
   }
 
-  // ✅ This should never show since we redirect above
+  // ✅ useRequireAuth will handle redirect if no user
   if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
-          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <UserIcon className="w-8 h-8 text-orange-500" />
-          </div>
-          <p className="text-gray-600 dark:text-gray-400 text-lg mb-4">Redirecting to sign in...</p>
-        </motion.div>
-      </div>
-    )
+    return null
   }
 
   return (
@@ -495,7 +375,7 @@ export default function Dashboard() {
                   </DropdownMenuItem>
                 </Link>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut}>
+                <DropdownMenuItem onClick={signOut}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>

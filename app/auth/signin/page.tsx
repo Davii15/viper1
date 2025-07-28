@@ -11,7 +11,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Globe, CheckCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { signIn, getCurrentUser } from "@/lib/auth"
+import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/components/auth-provider"
 
 export default function SignIn() {
   const [formData, setFormData] = useState({
@@ -21,30 +22,16 @@ export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [checkingAuth, setCheckingAuth] = useState(true)
   const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
 
-  // ✅ Check if user is already authenticated (cloud-based)
+  // ✅ Redirect if already authenticated
   useEffect(() => {
-    checkExistingSession()
-  }, [])
-
-  const checkExistingSession = async () => {
-    try {
-      setCheckingAuth(true)
-      const user = await getCurrentUser()
-
-      if (user) {
-        console.log("✅ User already authenticated, redirecting to dashboard")
-        router.replace("/dashboard")
-        return
-      }
-    } catch (error) {
-      console.error("Error checking cloud session:", error)
-    } finally {
-      setCheckingAuth(false)
+    if (!authLoading && user) {
+      console.log("✅ User already authenticated, redirecting to dashboard")
+      router.replace("/dashboard")
     }
-  }
+  }, [user, authLoading, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -65,17 +52,30 @@ export default function SignIn() {
     }
 
     try {
-      console.log("🔐 Starting cloud-based sign in...")
+      console.log("🔐 Starting sign in...")
 
-      // ✅ Pure cloud authentication
-      await signIn(formData.email.trim(), formData.password)
+      // ✅ Sign in with Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: formData.email.toLowerCase().trim(),
+        password: formData.password,
+      })
 
-      console.log("✅ Cloud sign in successful, redirecting to dashboard")
+      if (error) {
+        console.error("❌ Sign in error:", error)
+        throw error
+      }
 
-      // ✅ Redirect to dashboard
+      if (!data.user) {
+        throw new Error("Authentication failed - no user data")
+      }
+
+      console.log("✅ Sign in successful for:", data.user.email)
+
+      // ✅ The AuthProvider will handle the rest automatically
+      // Just redirect to dashboard
       router.replace("/dashboard")
     } catch (err: any) {
-      console.error("❌ Cloud sign in error:", err)
+      console.error("❌ Sign in error:", err)
 
       // ✅ Better error handling
       let errorMessage = "Failed to sign in"
@@ -107,15 +107,20 @@ export default function SignIn() {
   }
 
   // ✅ Show loading state while checking authentication
-  if (checkingAuth) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4">
         <div className="text-white text-center">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p>Checking cloud authentication...</p>
+          <p>Checking authentication...</p>
         </div>
       </div>
     )
+  }
+
+  // ✅ Don't render if user is authenticated (will redirect)
+  if (user) {
+    return null
   }
 
   return (
@@ -210,7 +215,7 @@ export default function SignIn() {
                 {loading ? (
                   <div className="flex items-center space-x-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Signing in to cloud...</span>
+                    <span>Signing in...</span>
                   </div>
                 ) : (
                   <div className="flex items-center space-x-2">

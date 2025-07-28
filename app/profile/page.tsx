@@ -27,29 +27,34 @@ import {
   FileText,
   Heart,
   Eye,
-  Camera,
   CheckCircle,
   X,
   MoreVertical,
   Settings,
   LogOut,
+  Loader2,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { useAuth, useRequireAuth } from "@/components/auth-provider"
 import { getUserPosts, getUserLikedPosts, getUserBookmarkedPosts } from "@/lib/posts"
 import { BlogCard } from "@/components/blog-card"
-import type { Post, User } from "@/lib/supabase"
+import { AvatarUpload } from "@/components/avatar-upload"
+import { supabase } from "@/lib/supabase"
+import type { Post } from "@/lib/supabase"
 
 export default function Profile() {
-  const [user, setUser] = useState<User | null>(null)
+  // ✅ Use the new auth system
+  const { user, loading: authLoading } = useRequireAuth()
+  const { signOut } = useAuth()
+
   const [userPosts, setUserPosts] = useState<Post[]>([])
   const [isEditing, setIsEditing] = useState(false)
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [postsLoading, setPostsLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [uploadError, setUploadError] = useState("")
 
   // Edit form state
   const [editForm, setEditForm] = useState({
@@ -76,101 +81,23 @@ export default function Profile() {
   const router = useRouter()
 
   useEffect(() => {
-    checkAuthAndLoadData()
-  }, [])
-
-  const checkAuthAndLoadData = async () => {
-    try {
-      console.log("🔍 Checking authentication...")
-
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession()
-
-      if (error) {
-        console.error("❌ Session error:", error)
-        router.replace("/auth/signin")
-        return
-      }
-
-      if (!session?.user) {
-        console.warn("⚠️ No session found, redirecting to signin")
-        router.replace("/auth/signin")
-        return
-      }
-
-      console.log("✅ Session found for:", session.user.email)
-
-      // ✅ Get user profile directly
-      const { data: profile, error: profileError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", session.user.id)
-        .single()
-
-      let userData = profile
-
-      // ✅ Create profile if it doesn't exist
-      if (profileError && profileError.code === "PGRST116") {
-        console.log("📝 Creating user profile...")
-        const newProfile = {
-          id: session.user.id,
-          email: session.user.email!,
-          username: session.user.user_metadata.username || session.user.email!.split("@")[0],
-          full_name: session.user.user_metadata.full_name || "User",
-          country: session.user.user_metadata.country,
-          avatar_url: session.user.user_metadata.avatar_url,
-          verified: false,
-          created_at: session.user.created_at,
-          updated_at: new Date().toISOString(),
-          last_seen: new Date().toISOString(),
-        }
-
-        const { data: createdProfile, error: createError } = await supabase
-          .from("users")
-          .insert(newProfile)
-          .select()
-          .single()
-
-        if (createError) {
-          console.warn("⚠️ Profile creation failed, using session data:", createError)
-          userData = newProfile
-        } else {
-          userData = createdProfile
-        }
-      } else if (profileError) {
-        console.warn("⚠️ Profile fetch failed, using session data:", profileError)
-        userData = {
-          id: session.user.id,
-          email: session.user.email!,
-          username: session.user.user_metadata.username || session.user.email!.split("@")[0],
-          full_name: session.user.user_metadata.full_name || "User",
-          country: session.user.user_metadata.country,
-          avatar_url: session.user.user_metadata.avatar_url,
-          verified: false,
-          created_at: session.user.created_at,
-          updated_at: session.user.updated_at || session.user.created_at,
-          last_seen: new Date().toISOString(),
-        }
-      }
-
-      setUser(userData)
-      setEditForm({
-        full_name: userData.full_name || "",
-        bio: userData.bio || "",
-        location: userData.location || "",
-        website: userData.website || "",
-        avatar_url: userData.avatar_url || "",
-      })
-
-      await Promise.all([loadUserPosts(userData.id), loadUserStats(userData.id)])
-    } catch (error) {
-      console.error("Error loading profile:", error)
-      setError("Failed to load profile data")
-    } finally {
-      setLoading(false)
+    if (user) {
+      loadUserData()
     }
+  }, [user])
+
+  const loadUserData = async () => {
+    if (!user) return
+
+    setEditForm({
+      full_name: user.full_name || "",
+      bio: user.bio || "",
+      location: user.location || "",
+      website: user.website || "",
+      avatar_url: user.avatar_url || "",
+    })
+
+    await Promise.all([loadUserPosts(user.id), loadUserStats(user.id)])
   }
 
   const loadUserPosts = async (userId: string) => {
@@ -216,14 +143,32 @@ export default function Profile() {
     }
   }
 
+  // ✅ Handle avatar upload success
+  const handleAvatarUploadSuccess = (url: string) => {
+    console.log("✅ Avatar uploaded successfully:", url)
+    setEditForm({ ...editForm, avatar_url: url })
+    setUploadError("")
+    setSuccess("Profile photo uploaded! Don't forget to save your changes.")
+  }
+
+  // ✅ Handle avatar upload error
+  const handleAvatarUploadError = (error: string) => {
+    console.error("❌ Avatar upload error:", error)
+    setUploadError(error)
+    setSuccess("")
+  }
+
   const handleSaveProfile = async () => {
     if (!user) return
 
     setSaving(true)
     setError("")
     setSuccess("")
+    setUploadError("")
 
     try {
+      console.log("💾 Saving profile updates...")
+
       const { error: updateError } = await supabase
         .from("users")
         .update({
@@ -238,31 +183,17 @@ export default function Profile() {
 
       if (updateError) throw updateError
 
-      // Update local user state
-      setUser({
-        ...user,
-        ...editForm,
-        updated_at: new Date().toISOString(),
-      })
-
+      console.log("✅ Profile updated successfully")
       setSuccess("Profile updated successfully! 🎉")
       setIsEditing(false)
+
+      // ✅ Refresh user data in auth context
+      // The AuthProvider will automatically sync the updated data
     } catch (error: any) {
-      console.error("Error updating profile:", error)
+      console.error("❌ Error updating profile:", error)
       setError(error.message || "Failed to update profile")
     } finally {
       setSaving(false)
-    }
-  }
-
-  const handleSignOut = async () => {
-    try {
-      console.log("🚪 Signing out...")
-      await supabase.auth.signOut()
-      window.location.href = "/"
-    } catch (error) {
-      console.error("Error signing out:", error)
-      window.location.href = "/"
     }
   }
 
@@ -313,7 +244,8 @@ export default function Profile() {
     }
   }
 
-  if (loading) {
+  // ✅ Show loading while checking auth
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
@@ -324,6 +256,7 @@ export default function Profile() {
     )
   }
 
+  // ✅ useRequireAuth will handle redirect if no user
   if (!user) {
     return null
   }
@@ -381,7 +314,7 @@ export default function Profile() {
                       </DropdownMenuItem>
                     </Link>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleSignOut} className="text-red-600 focus:text-red-600">
+                    <DropdownMenuItem onClick={signOut} className="text-red-600 focus:text-red-600">
                       <LogOut className="mr-2 h-4 w-4" />
                       Sign out
                     </DropdownMenuItem>
@@ -390,13 +323,39 @@ export default function Profile() {
               </>
             ) : (
               <div className="flex space-x-2">
-                <Button onClick={() => setIsEditing(false)} variant="ghost" size="sm">
+                <Button
+                  onClick={() => {
+                    setIsEditing(false)
+                    setUploadError("")
+                    setSuccess("")
+                    // Reset form to original values
+                    setEditForm({
+                      full_name: user.full_name || "",
+                      bio: user.bio || "",
+                      location: user.location || "",
+                      website: user.website || "",
+                      avatar_url: user.avatar_url || "",
+                    })
+                  }}
+                  variant="ghost"
+                  size="sm"
+                  disabled={saving}
+                >
                   <X className="w-4 h-4 mr-2" />
                   Cancel
                 </Button>
                 <Button onClick={handleSaveProfile} disabled={saving} size="sm">
-                  <Save className="w-4 h-4 mr-2" />
-                  {saving ? "Saving..." : "Save"}
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Save
+                    </>
+                  )}
                 </Button>
               </div>
             )}
@@ -419,25 +378,33 @@ export default function Profile() {
           </Alert>
         )}
 
+        {uploadError && (
+          <Alert className="mb-6 border-red-200 bg-red-50">
+            <AlertDescription className="text-red-700">{uploadError}</AlertDescription>
+          </Alert>
+        )}
+
         {/* Profile Header */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <Card className="mb-8">
             <CardContent className="p-8">
               <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-6">
-                {/* Avatar */}
-                <div className="relative">
-                  <Avatar className="w-24 h-24">
-                    <AvatarImage src={user.avatar_url || "/placeholder.svg"} />
-                    <AvatarFallback className="text-2xl">{user.full_name[0]}</AvatarFallback>
-                  </Avatar>
-                  {isEditing && (
-                    <Button
-                      size="sm"
-                      className="absolute -bottom-2 -right-2 rounded-full w-8 h-8 p-0 bg-transparent"
-                      variant="outline"
-                    >
-                      <Camera className="w-4 h-4" />
-                    </Button>
+                {/* ✅ Avatar with Upload Functionality */}
+                <div className="flex flex-col items-center space-y-2">
+                  {isEditing ? (
+                    <AvatarUpload
+                      currentAvatarUrl={editForm.avatar_url}
+                      userName={user.full_name}
+                      onUploadSuccess={handleAvatarUploadSuccess}
+                      onUploadError={handleAvatarUploadError}
+                      disabled={saving}
+                      size="lg"
+                    />
+                  ) : (
+                    <Avatar className="w-24 h-24">
+                      <AvatarImage src={user.avatar_url || "/placeholder.svg"} />
+                      <AvatarFallback className="text-2xl">{user.full_name[0]}</AvatarFallback>
+                    </Avatar>
                   )}
                 </div>
 
@@ -490,6 +457,7 @@ export default function Profile() {
                           value={editForm.full_name}
                           onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
                           placeholder="Your full name"
+                          disabled={saving}
                         />
                       </div>
                       <div>
@@ -499,6 +467,7 @@ export default function Profile() {
                           onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })}
                           placeholder="Tell us about yourself..."
                           rows={3}
+                          disabled={saving}
                         />
                       </div>
                       <div className="grid md:grid-cols-2 gap-4">
@@ -508,6 +477,7 @@ export default function Profile() {
                             value={editForm.location}
                             onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
                             placeholder="Your location"
+                            disabled={saving}
                           />
                         </div>
                         <div>
@@ -516,16 +486,9 @@ export default function Profile() {
                             value={editForm.website}
                             onChange={(e) => setEditForm({ ...editForm, website: e.target.value })}
                             placeholder="https://yourwebsite.com"
+                            disabled={saving}
                           />
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Avatar URL</label>
-                        <Input
-                          value={editForm.avatar_url}
-                          onChange={(e) => setEditForm({ ...editForm, avatar_url: e.target.value })}
-                          placeholder="https://example.com/avatar.jpg"
-                        />
                       </div>
                     </div>
                   )}
@@ -601,7 +564,7 @@ export default function Profile() {
             <TabsContent value="posts" className="mt-6">
               {postsLoading ? (
                 <div className="flex justify-center py-8">
-                  <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                  <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
                 </div>
               ) : userPosts.length > 0 ? (
                 <div className="space-y-6">
@@ -643,7 +606,7 @@ export default function Profile() {
             <TabsContent value="liked" className="mt-6">
               {likedLoading ? (
                 <div className="flex justify-center py-8">
-                  <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                  <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
                 </div>
               ) : likedPosts.length > 0 ? (
                 <div className="space-y-6">
@@ -679,7 +642,7 @@ export default function Profile() {
             <TabsContent value="bookmarks" className="mt-6">
               {bookmarkedLoading ? (
                 <div className="flex justify-center py-8">
-                  <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                  <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
                 </div>
               ) : bookmarkedPosts.length > 0 ? (
                 <div className="space-y-6">
