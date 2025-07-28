@@ -100,20 +100,84 @@ export default function SignIn() {
     }
   }
 
+  // ✅ Add timeout safety mechanism
+  useEffect(() => {
+    if (authLoading) {
+      const timeout = setTimeout(() => {
+        console.warn("⚠️ Authentication taking longer than expected")
+        // Could show a "Taking longer than usual" message here
+      }, 10000) // 10 second timeout
+
+      return () => clearTimeout(timeout)
+    }
+  }, [authLoading])
+
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
     // ✅ Clear error when user starts typing
     if (error) setError("")
   }
 
-  // ✅ Show loading state while checking authentication
+  // ✅ Show improved loading states while checking authentication
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4">
-        <div className="text-white text-center">
-          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p>Checking authentication...</p>
+      <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-10 left-10 text-6xl animate-pulse">🌍</div>
+          <div className="absolute top-20 right-20 text-4xl animate-bounce">🦁</div>
+          <div className="absolute bottom-20 left-20 text-5xl animate-pulse">🌴</div>
+          <div className="absolute bottom-10 right-10 text-4xl animate-bounce">🐘</div>
+          <div className="absolute top-1/2 left-1/4 text-3xl animate-pulse">🦒</div>
+          <div className="absolute top-1/3 right-1/3 text-3xl animate-bounce">🌺</div>
         </div>
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
+          className="text-white text-center relative z-10"
+        >
+          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-6 backdrop-blur-sm">
+            <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+            <h2 className="text-2xl font-bold mb-2">{user ? "Karibu Tena!" : "Verifying Account..."}</h2>
+            <p className="text-lg mb-2 opacity-90">
+              {user ? `Welcome back, ${user.full_name}!` : "Checking your global Ubuntu account"}
+            </p>
+            <p className="text-sm opacity-75">
+              {user ? "Loading your dashboard from the cloud..." : "This should only take a moment"}
+            </p>
+          </motion.div>
+
+          {/* Progress indicator */}
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: "100%" }}
+            transition={{ duration: 2, ease: "easeInOut" }}
+            className="h-1 bg-white/30 rounded-full mx-auto mt-6 max-w-xs overflow-hidden"
+          >
+            <motion.div
+              initial={{ x: "-100%" }}
+              animate={{ x: "100%" }}
+              transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+              className="h-full w-1/3 bg-white rounded-full"
+            />
+          </motion.div>
+
+          {/* Global access reminder */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1 }}
+            className="mt-8 p-4 bg-white/10 rounded-lg backdrop-blur-sm max-w-md mx-auto"
+          >
+            <p className="text-sm font-medium mb-2">🌍 Global Access Active</p>
+            <p className="text-xs opacity-80">Your account works on any device, anywhere in the world</p>
+          </motion.div>
+        </motion.div>
       </div>
     )
   }
@@ -210,13 +274,19 @@ export default function SignIn() {
               <Button
                 type="submit"
                 className="w-full bg-gradient-to-r from-orange-500 via-red-500 to-purple-600 hover:from-orange-600 hover:via-red-600 hover:to-purple-700 text-white py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
-                disabled={loading}
+                disabled={loading || authLoading}
               >
                 {loading ? (
-                  <div className="flex items-center space-x-2">
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center space-x-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     <span>Signing in...</span>
-                  </div>
+                    <div className="text-xs opacity-75">Verifying credentials</div>
+                  </motion.div>
+                ) : authLoading ? (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Loading Dashboard...</span>
+                  </motion.div>
                 ) : (
                   <div className="flex items-center space-x-2">
                     <Globe className="w-4 h-4" />
