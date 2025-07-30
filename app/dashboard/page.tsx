@@ -52,7 +52,7 @@ import { DebugInfo } from "@/components/debug-info"
 import { TrendingTopics } from "@/components/trending-topics"
 
 export default function Dashboard() {
-  // ✅ Use the new auth system
+  // ✅ Use the new auth system WITHOUT aggressive timeouts
   const { user, loading: authLoading } = useRequireAuth()
   const { signOut } = useAuth()
 
@@ -235,7 +235,7 @@ export default function Dashboard() {
     }
   }
 
-  const handleFiltersChange = (newFilters) => {
+  const handleFiltersChange = (newFilters: any) => {
     setFilters(newFilters)
     setCurrentPage(1)
   }
@@ -255,21 +255,32 @@ export default function Dashboard() {
     }
   }, [user])
 
-  // ✅ Show loading while checking auth
+  // ✅ Show loading while checking auth - NO TIMEOUT REDIRECTS
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
           <div className="w-12 h-12 border-3 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600 dark:text-gray-400 text-lg">Loading your dashboard...</p>
+          <p className="text-gray-500 dark:text-gray-500 text-sm mt-2">Fetching your global account...</p>
         </motion.div>
       </div>
     )
   }
 
-  // ✅ useRequireAuth will handle redirect if no user
+  // ✅ Let middleware handle redirects - don't return null immediately
   if (!user) {
-    return null
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
+          <div className="w-12 h-12 border-3 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400 text-lg">Verifying access...</p>
+          <p className="text-gray-500 dark:text-gray-500 text-sm mt-2">
+            Please wait while we check your authentication
+          </p>
+        </motion.div>
+      </div>
+    )
   }
 
   return (
@@ -349,7 +360,7 @@ export default function Dashboard() {
                 <Button variant="ghost" className="flex items-center space-x-2 p-2">
                   <Avatar className="w-8 h-8">
                     <AvatarImage src={user.avatar_url || "/placeholder.svg"} />
-                    <AvatarFallback>{user.full_name[0]}</AvatarFallback>
+                    <AvatarFallback>{user.full_name?.[0] || "U"}</AvatarFallback>
                   </Avatar>
                   <span className="hidden md:block font-medium">{user.full_name}</span>
                 </Button>
@@ -606,7 +617,7 @@ export default function Dashboard() {
             </Button>
           </Link>
           <Link href="/create">
-            <Button variant="ghost" className="flex flex-col items-center space-x-2 h-auto py-2">
+            <Button variant="ghost" className="flex flex-col items-center space-y-1 h-auto py-2">
               <Plus className="w-5 h-5" />
               <span className="text-xs">Create</span>
             </Button>

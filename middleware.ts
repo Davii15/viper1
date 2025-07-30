@@ -1,9 +1,15 @@
 import { updateSession } from "@/lib/supabase/middleware"
-import type { NextRequest } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 
 export async function middleware(request: NextRequest) {
-  // ✅ Re-enabled middleware with proper mobile support and loop prevention
-  return await updateSession(request)
+  // ✅ Enhanced middleware with better error handling
+  try {
+    return await updateSession(request)
+  } catch (error) {
+    console.error("❌ Middleware error:", error)
+    // ✅ On error, allow request to continue rather than blocking
+    return NextResponse.next()
+  }
 }
 
 export const config = {
@@ -14,6 +20,7 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - api routes (handled separately)
+     * - public assets
      */
     "/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],

@@ -225,31 +225,20 @@ export function useAuth() {
   return context
 }
 
-// ✅ Hook to require authentication with timeout
+// ✅ Hook to require authentication WITHOUT aggressive timeouts
 export function useRequireAuth() {
   const { user, loading } = useAuth()
 
   useEffect(() => {
-    // ✅ Set a reasonable timeout for auth check
-    const timeout = setTimeout(() => {
-      if (loading) {
-        console.warn("⚠️ Auth check taking too long, redirecting to sign in")
-        window.location.href = "/auth/signin"
-      }
-    }, 5000) // 5 second timeout
+    // ✅ REMOVED aggressive timeout that was causing the loop
+    // Let middleware handle redirects instead of client-side timeouts
 
-    // ✅ Clear timeout if auth completes
-    if (!loading) {
-      clearTimeout(timeout)
-    }
-
-    // ✅ Redirect if no user after loading completes
+    // ✅ Only redirect if we're certain there's no user and not loading
     if (!loading && !user) {
-      console.log("🔒 useRequireAuth: Redirecting unauthenticated user")
-      window.location.href = "/auth/signin"
+      console.log("🔒 useRequireAuth: No user found after loading complete")
+      // Let the middleware handle this instead of forcing a redirect
+      // The middleware will catch this and redirect appropriately
     }
-
-    return () => clearTimeout(timeout)
   }, [user, loading])
 
   return { user, loading }
