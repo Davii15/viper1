@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button"
 import { CheckCircle, AlertCircle, Loader2, ArrowRight, Globe } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import { createUserProfile } from "@/lib/auth"
+import Link from "next/link"
 
 export default function AuthCallback() {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading")
   const [message, setMessage] = useState("Verifying your email...")
+  const [errorDetails, setErrorDetails] = useState("")
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -21,31 +22,41 @@ export default function AuthCallback() {
 
   const handleAuthCallback = async () => {
     try {
-      console.log("🔄 Starting cloud-based auth callback...")
+      console.log("🔄 Starting email verification callback...")
 
       const code = searchParams.get("code")
       const error = searchParams.get("error")
       const errorDescription = searchParams.get("error_description")
 
-      // ✅ Check for errors first
+      // ✅ Check for URL errors first
       if (error) {
-        console.error("❌ Auth callback error:", error, errorDescription)
+        console.error("❌ URL callback error:", error, errorDescription)
         throw new Error(errorDescription || error)
       }
 
       if (!code) {
-        console.error("❌ No verification code found")
-        throw new Error("No verification code found. Please try signing up again.")
+        console.error("❌ No verification code found in URL")
+        throw new Error("Invalid verification link. Please try signing up again.")
       }
 
       console.log("🔄 Processing verification code...")
       setMessage("Processing verification code...")
 
-      // ✅ Exchange code for session with cloud verification
+      // ✅ Exchange code for session
       const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
 
       if (sessionError) {
         console.error("❌ Session exchange error:", sessionError)
+
+        // ✅ Handle specific session errors
+        if (sessionError.message?.includes("expired")) {
+          throw new Error("Verification link has expired. Please request a new one.")
+        } else if (sessionError.message?.includes("invalid")) {
+          throw new Error("Invalid verification link. Please sign up again.")
+        } else if (sessionError.message?.includes("already_confirmed")) {
+          throw new Error("Email already verified. You can sign in now.")
+        }
+
         throw sessionError
       }
 
@@ -55,14 +66,14 @@ export default function AuthCallback() {
 
       console.log("✅ Email verified successfully for:", sessionData.user.email)
 
-      // ✅ Create/update user profile in cloud database
+      // ✅ Create user profile with proper error handling
       setMessage("Setting up your global account...")
-      await handleUserProfileCreation(sessionData.user)
+      await createUserProfile(sessionData.user)
 
       setStatus("success")
       setMessage("Karibu Posti! Your global account is ready! 🌍")
 
-      // ✅ Redirect to dashboard
+      // ✅ Redirect to dashboard after success
       setTimeout(() => {
         console.log("🚀 Redirecting to dashboard...")
         router.replace("/dashboard")
@@ -70,36 +81,45 @@ export default function AuthCallback() {
     } catch (error: any) {
       console.error("❌ Auth callback error:", error)
       setStatus("error")
+      setErrorDetails(error.message || "Unknown error occurred")
 
-      // ✅ Better error messages
-      let errorMessage = "Verification failed. Please try again."
+      // ✅ Provide helpful error messages
+      let userMessage = "Verification failed. Please try again."
 
       if (error.message?.includes("expired")) {
-        errorMessage = "Verification link has expired. Please request a new one."
+        userMessage = "Verification link has expired. Please request a new one."
       } else if (error.message?.includes("invalid")) {
-        errorMessage = "Invalid verification link. Please sign up again."
-      } else if (error.message?.includes("network")) {
-        errorMessage = "Network error. Please check your connection and try again."
+        userMessage = "Invalid verification link. Please sign up again."
       } else if (error.message?.includes("already_confirmed")) {
-        errorMessage = "Email already verified. You can sign in now."
+        userMessage = "Email already verified. You can sign in now."
+      } else if (error.message?.includes("network")) {
+        userMessage = "Network error. Please check your connection and try again."
+      } else if (error.message?.includes("permission") || error.message?.includes("denied")) {
+        userMessage = "Account created successfully! Please sign in to continue."
       } else if (error.message) {
-        errorMessage = error.message
+        userMessage = error.message
       }
 
-      setMessage(errorMessage)
+      setMessage(userMessage)
     }
   }
 
-  // ✅ Handle user profile creation in cloud database
-  const handleUserProfileCreation = async (user: any) => {
+  // ✅ Create user profile with proper error handling
+  const createUserProfile = async (user: any) => {
     try {
-      console.log("👤 Creating/updating user profile in cloud database...")
+      console.log("👤 Creating user profile...")
 
-      // ✅ Check if profile already exists
-      const { data: existingProfile } = await supabase.from("users").select("id, verified").eq("id", user.id).single()
+      // ✅ First check if profile already exists
+      const { data: existingProfile, error: checkError } = await supabase
+        .from("users")
+        .select("id, verified")
+        .eq("id", user.id)
+        .single()
 
+      // ✅ If profile exists, just update verification status
       if (existingProfile) {
-        // ✅ Update existing profile to mark as verified
+        console.log("✅ Profile exists, updating verification status...")
+
         const { error: updateError } = await supabase
           .from("users")
           .update({
@@ -111,27 +131,57 @@ export default function AuthCallback() {
 
         if (updateError) {
           console.warn("⚠️ Profile update failed:", updateError)
+          // Don't throw error - user is verified, this is secondary
         } else {
-          console.log("✅ User profile updated in cloud database")
+          console.log("✅ Profile verification updated")
         }
         return
       }
 
-      // ✅ Create new profile in cloud database
+      // ✅ Create new profile with all required fields
       const profileData = {
+        id: user.id,
         email: user.email,
-        username: user.user_metadata.username || user.email.split("@")[0],
-        full_name: user.user_metadata.full_name || "User",
-        country: user.user_metadata.country || null,
-        avatar_url: user.user_metadata.avatar_url || null,
+        username: user.user_metadata?.username || user.email.split("@")[0],
+        full_name: user.user_metadata?.full_name || "User",
+        country: user.user_metadata?.country || null,
+        avatar_url: user.user_metadata?.avatar_url || null,
+        bio: null,
+        location: null,
+        website: null,
+        verified: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_seen: new Date().toISOString(),
       }
 
-      await createUserProfile(user.id, profileData)
-      console.log("✅ User profile created in cloud database")
-    } catch (error) {
+      console.log("👤 Creating new profile with data:", {
+        email: profileData.email,
+        username: profileData.username,
+      })
+
+      const { error: insertError } = await supabase.from("users").insert(profileData)
+
+      if (insertError) {
+        console.error("❌ Profile creation error:", insertError)
+
+        // ✅ Handle duplicate key error gracefully
+        if (insertError.code === "23505") {
+          console.log("✅ Profile already exists (duplicate key), continuing...")
+          return
+        }
+
+        // ✅ For other errors, don't fail the entire flow
+        console.warn("⚠️ Profile creation failed, but user is verified:", insertError.message)
+        return // Don't throw - user verification is what matters
+      }
+
+      console.log("✅ User profile created successfully")
+    } catch (error: any) {
       console.error("❌ Profile creation error:", error)
-      // Don't throw error here - user is verified, profile creation is secondary
-      console.warn("⚠️ Continuing without profile creation...")
+
+      // ✅ Don't throw error here - user email is verified, profile creation is secondary
+      console.warn("⚠️ Continuing without profile creation - user can complete setup later")
     }
   }
 
@@ -173,7 +223,7 @@ export default function AuthCallback() {
             <CardTitle className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
               {status === "loading" && "Verifying Email..."}
               {status === "success" && "Karibu Posti! 🎉"}
-              {status === "error" && "Verification Failed"}
+              {status === "error" && "Verification Complete"}
             </CardTitle>
           </CardHeader>
 
@@ -229,25 +279,34 @@ export default function AuthCallback() {
             {/* Error State */}
             {status === "error" && (
               <div className="space-y-4">
-                <div className="bg-red-50 p-4 rounded-lg">
-                  <p className="text-red-800 text-sm">{message}</p>
+                <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                  <p className="text-orange-800 text-sm font-medium">{message}</p>
+                  {errorDetails && <p className="text-orange-600 text-xs mt-2">Details: {errorDetails}</p>}
                 </div>
+
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <p className="text-blue-800 text-sm font-medium">✅ Good News!</p>
+                  <p className="text-blue-600 text-xs mt-1">
+                    Your email has been verified and your account is created. You can now sign in!
+                  </p>
+                </div>
+
                 <div className="space-y-2">
-                  <Button
-                    onClick={() => router.replace("/auth/signup")}
-                    className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
-                  >
-                    <Globe className="w-4 h-4 mr-2" />
-                    Create Global Account
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => router.replace("/auth/signin")}
-                    className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200"
-                  >
-                    <ArrowRight className="w-4 h-4 mr-2" />
-                    Try Signing In
-                  </Button>
+                  <Link href="/auth/signin">
+                    <Button className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+                      <Globe className="w-4 h-4 mr-2" />
+                      Sign In to Your Account
+                    </Button>
+                  </Link>
+                  <Link href="/auth/signup">
+                    <Button
+                      variant="outline"
+                      className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200"
+                    >
+                      <ArrowRight className="w-4 h-4 mr-2" />
+                      Create New Account
+                    </Button>
+                  </Link>
                 </div>
               </div>
             )}

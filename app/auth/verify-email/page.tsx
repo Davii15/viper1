@@ -5,35 +5,44 @@ import { motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Mail, ArrowLeft, CheckCircle, RefreshCw, AlertCircle } from "lucide-react"
+import { Mail, ArrowLeft, CheckCircle, RefreshCw, AlertCircle, Globe } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import { getCurrentUser } from "@/lib/auth"
+import { useAuth } from "@/components/auth-provider"
 
 export default function VerifyEmail() {
   const [verificationStatus, setVerificationStatus] = useState<"pending" | "success" | "error">("pending")
   const [message, setMessage] = useState("Check your email for the verification link")
   const [resending, setResending] = useState(false)
   const [userEmail, setUserEmail] = useState<string>("")
+  const [countdown, setCountdown] = useState(0)
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { user, loading: authLoading } = useAuth()
 
   useEffect(() => {
     initializeVerificationPage()
   }, [])
 
+  // ✅ Countdown for resend button
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [countdown])
+
   const initializeVerificationPage = async () => {
     try {
-      // ✅ Check if user is already authenticated (cloud-based)
-      const user = await getCurrentUser()
-      if (user) {
+      // ✅ Check if user is already authenticated
+      if (!authLoading && user) {
         console.log("✅ User already verified, redirecting to dashboard")
         router.replace("/dashboard")
         return
       }
 
-      // ✅ Get email from URL params (cloud-based approach)
+      // ✅ Get email from URL params
       const email = searchParams.get("email")
       if (email) {
         setUserEmail(email)
@@ -42,33 +51,20 @@ export default function VerifyEmail() {
         setMessage("Please check your email for the verification link.")
       }
 
-      // ✅ Listen for auth state changes (cloud-based)
+      // ✅ Listen for auth state changes
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange(async (event, session) => {
         console.log("🔄 Auth state change:", event, session?.user?.email)
 
         if (event === "SIGNED_IN" && session?.user) {
-          try {
-            setVerificationStatus("success")
-            setMessage("Email verified successfully! Setting up your global account...")
+          setVerificationStatus("success")
+          setMessage("Email verified successfully! Welcome to Posti! 🎉")
 
-            // ✅ Ensure user profile exists in cloud database
-            await ensureUserProfile(session.user)
-
-            setMessage("Karibu Posti! Your global account is ready! 🌍")
-
-            // ✅ Redirect to dashboard
-            setTimeout(() => {
-              router.replace("/dashboard")
-            }, 2000)
-          } catch (error) {
-            console.error("❌ Profile setup error:", error)
-            setVerificationStatus("error")
-            setMessage(
-              "Verification successful, but there was an issue setting up your profile. Please try signing in.",
-            )
-          }
+          // ✅ Redirect to dashboard
+          setTimeout(() => {
+            router.replace("/dashboard")
+          }, 2000)
         }
       })
 
@@ -77,50 +73,6 @@ export default function VerifyEmail() {
       console.error("❌ Verification page initialization error:", error)
       setVerificationStatus("error")
       setMessage("There was an issue loading the verification page. Please try again.")
-    }
-  }
-
-  // ✅ Ensure user profile exists in cloud database
-  const ensureUserProfile = async (user: any) => {
-    try {
-      console.log("👤 Ensuring user profile exists in cloud database...")
-
-      // Check if profile already exists
-      const { data: existingProfile } = await supabase.from("users").select("id").eq("id", user.id).single()
-
-      if (existingProfile) {
-        console.log("✅ User profile already exists in cloud database")
-        return
-      }
-
-      // Create user profile in cloud database
-      const profileData = {
-        id: user.id,
-        email: user.email,
-        username: user.user_metadata.username || user.email.split("@")[0],
-        full_name: user.user_metadata.full_name || "User",
-        country: user.user_metadata.country || null,
-        avatar_url: user.user_metadata.avatar_url || null,
-        bio: null,
-        location: null,
-        website: null,
-        verified: true, // Mark as verified since email is confirmed
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        last_seen: new Date().toISOString(),
-      }
-
-      const { error } = await supabase.from("users").insert(profileData)
-
-      if (error && error.code !== "23505") {
-        // Ignore duplicate key error
-        throw error
-      }
-
-      console.log("✅ User profile created in cloud database")
-    } catch (error) {
-      console.error("❌ Profile creation error:", error)
-      throw error
     }
   }
 
@@ -142,13 +94,28 @@ export default function VerifyEmail() {
 
       if (error) throw error
 
-      setMessage("Verification email sent! Please check your inbox and spam folder.")
+      setMessage("New verification email sent! Please check your inbox and spam folder.")
+      setCountdown(60) // 60 second cooldown
     } catch (error: any) {
       console.error("❌ Resend error:", error)
-      setMessage(error.message || "Failed to resend verification email")
+
+      let errorMessage = "Failed to resend verification email"
+      if (error.message?.includes("rate_limit")) {
+        errorMessage = "Please wait before requesting another email"
+        setCountdown(60)
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+
+      setMessage(errorMessage)
     } finally {
       setResending(false)
     }
+  }
+
+  // ✅ Don't render if user is authenticated (will redirect)
+  if (user) {
+    return null
   }
 
   return (
@@ -186,7 +153,7 @@ export default function VerifyEmail() {
                 <Mail className="w-8 h-8 text-white" />
               )}
             </div>
-            <CardTitle className="text-2xl font-bold">
+            <CardTitle className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
               {verificationStatus === "success"
                 ? "Karibu Posti! 🎉"
                 : verificationStatus === "error"
@@ -223,12 +190,17 @@ export default function VerifyEmail() {
                     variant="outline"
                     className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200"
                     onClick={handleResendVerification}
-                    disabled={resending || !userEmail}
+                    disabled={resending || !userEmail || countdown > 0}
                   >
                     {resending ? (
                       <>
                         <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                         Sending...
+                      </>
+                    ) : countdown > 0 ? (
+                      <>
+                        <Mail className="w-4 h-4 mr-2" />
+                        Resend in {countdown}s
                       </>
                     ) : (
                       <>
@@ -278,12 +250,17 @@ export default function VerifyEmail() {
                     variant="outline"
                     className="w-full bg-transparent hover:bg-red-50 hover:text-red-600 hover:border-red-200"
                     onClick={handleResendVerification}
-                    disabled={resending || !userEmail}
+                    disabled={resending || !userEmail || countdown > 0}
                   >
                     {resending ? (
                       <>
                         <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                         Sending...
+                      </>
+                    ) : countdown > 0 ? (
+                      <>
+                        <Mail className="w-4 h-4 mr-2" />
+                        Resend in {countdown}s
                       </>
                     ) : (
                       <>
@@ -294,7 +271,8 @@ export default function VerifyEmail() {
                   </Button>
                   <Link href="/auth/signup">
                     <Button variant="ghost" className="w-full">
-                      Sign Up Again
+                      <Globe className="w-4 h-4 mr-2" />
+                      Create New Account
                     </Button>
                   </Link>
                 </div>
