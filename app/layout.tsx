@@ -39,43 +39,58 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  // ✅ Get server-side session and user data
+  // ✅ Get server-side session and user data with timeout
   let initialSession = null
   let initialUser = null
 
   try {
-    const supabase = await createServerSupabaseClient()
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+    // ✅ Add timeout to server-side auth check
+    const authPromise = (async () => {
+      const supabase = await createServerSupabaseClient()
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
 
-    if (sessionError) {
-      console.error("❌ Layout: Session error:", sessionError)
-    } else if (session?.user) {
-      console.log("✅ Layout: Server session found for:", session.user.email)
-      initialSession = session
-
-      // ✅ Get user profile from database
-      const { data: profile, error: profileError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", session.user.id)
-        .single()
-
-      if (profileError) {
-        if (profileError.code !== "PGRST116") {
-          console.error("❌ Layout: Profile fetch error:", profileError)
-        }
-      } else {
-        console.log("✅ Layout: User profile loaded:", profile.email)
-        initialUser = profile
+      if (sessionError) {
+        console.error("❌ Layout: Session error:", sessionError)
+        return { session: null, user: null }
       }
-    } else {
+
+      if (session?.user) {
+        console.log("✅ Layout: Server session found for:", session.user.email)
+
+        // ✅ Get user profile from database
+        const { data: profile, error: profileError } = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", session.user.id)
+          .single()
+
+        if (profileError) {
+          if (profileError.code !== "PGRST116") {
+            console.error("❌ Layout: Profile fetch error:", profileError)
+          }
+          return { session, user: null }
+        }
+
+        console.log("✅ Layout: User profile loaded:", profile.email)
+        return { session, user: profile }
+      }
+
       console.log("ℹ️ Layout: No server session found")
-    }
+      return { session: null, user: null }
+    })()
+
+    // ✅ Race against timeout
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Server auth timeout")), 3000))
+
+    const result = await Promise.race([authPromise, timeoutPromise])
+    initialSession = result.session
+    initialUser = result.user
   } catch (error) {
     console.error("❌ Layout: Server auth check failed:", error)
+    // Continue with null values - client will handle auth
   }
 
   return (
