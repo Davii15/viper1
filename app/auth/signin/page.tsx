@@ -11,10 +11,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Globe, CheckCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase/client" // Corrected import path
 import { useAuth } from "@/components/auth-provider"
 
 export default function SignIn() {
+  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -22,39 +24,24 @@ export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const router = useRouter()
-  const { user, loading: authLoading } = useAuth()
+
+  // ✅ Immediate return if user is already authenticated and not loading
+  if (!authLoading && user) {
+    console.log("✅ User already authenticated, preventing sign-in page render and redirecting to dashboard")
+    // Use router.replace for client-side navigation
+    router.replace("/dashboard")
+    return null // Prevent rendering the sign-in form
+  }
 
   // ✅ Redirect if already authenticated with better handling
   useEffect(() => {
     if (!authLoading && user) {
       console.log("✅ User already authenticated, redirecting to dashboard")
-
-      // ✅ Use a more robust redirect method
-      const redirectToDashboard = () => {
-        // Try multiple redirect methods for better reliability
-        try {
-          // Method 1: Next.js router
-          router.replace("/dashboard")
-
-          // Method 2: Fallback with window.location after delay
-          setTimeout(() => {
-            if (window.location.pathname === "/auth/signin") {
-              console.log("🔄 Router redirect failed, using window.location")
-              window.location.href = "/dashboard"
-            }
-          }, 2000)
-        } catch (error) {
-          console.error("❌ Redirect error:", error)
-          // Method 3: Force redirect as last resort
-          window.location.href = "/dashboard"
-        }
-      }
-
-      // ✅ Small delay to ensure auth state is fully settled
-      const redirectTimer = setTimeout(redirectToDashboard, 100)
-
-      return () => clearTimeout(redirectTimer)
+      // Use router.replace for client-side navigation
+      router.replace("/dashboard")
+      // No need for setTimeout fallback here, as the `if (!authLoading && user)` block above
+      // will prevent rendering and immediately trigger the redirect.
+      // If for some reason the component still renders, this useEffect will catch it.
     }
   }, [user, authLoading, router])
 
@@ -205,11 +192,6 @@ export default function SignIn() {
         </motion.div>
       </div>
     )
-  }
-
-  // ✅ Don't render if user is authenticated (will redirect)
-  if (user) {
-    return null
   }
 
   return (

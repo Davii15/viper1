@@ -2,8 +2,8 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useCallback } from "react"
-import { supabase } from "@/lib/supabase"
-import type { User as CustomUser } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase/client" // Corrected import path
+import type { User as CustomUser } from "@/lib/supabase/client" // Corrected import path
 
 interface AuthContextType {
   user: CustomUser | null
@@ -60,7 +60,7 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
     }
   }, [])
 
-  // ✅ Initialize auth state with deduplication
+  // ✅ Initialize auth state with deduplication and proper dependency management
   useEffect(() => {
     let mounted = true
     let authSubscription: any = null
@@ -163,7 +163,9 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
           } else if (event === "INITIAL_SESSION" && session?.user) {
             console.log("🔄 AuthProvider: Initial session detected")
             // Only process if we don't already have a user
+            // This check is crucial to prevent re-fetching if user is already set from initialUser prop
             if (!user) {
+              // Keep this check
               const profile = await fetchUserProfile(session.user.id)
               if (mounted) {
                 setUser(profile)
@@ -203,7 +205,7 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
         authSubscription.unsubscribe()
       }
     }
-  }, [fetchUserProfile, initialUser, user]) // ✅ Add user to dependencies
+  }, [fetchUserProfile, initialUser]) // ✅ Removed 'user' from dependencies
 
   // ✅ Sign out function
   const handleSignOut = useCallback(async () => {
