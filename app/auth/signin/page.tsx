@@ -25,11 +25,36 @@ export default function SignIn() {
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
 
-  // ✅ Redirect if already authenticated
+  // ✅ Redirect if already authenticated with better handling
   useEffect(() => {
     if (!authLoading && user) {
       console.log("✅ User already authenticated, redirecting to dashboard")
-      router.replace("/dashboard")
+
+      // ✅ Use a more robust redirect method
+      const redirectToDashboard = () => {
+        // Try multiple redirect methods for better reliability
+        try {
+          // Method 1: Next.js router
+          router.replace("/dashboard")
+
+          // Method 2: Fallback with window.location after delay
+          setTimeout(() => {
+            if (window.location.pathname === "/auth/signin") {
+              console.log("🔄 Router redirect failed, using window.location")
+              window.location.href = "/dashboard"
+            }
+          }, 2000)
+        } catch (error) {
+          console.error("❌ Redirect error:", error)
+          // Method 3: Force redirect as last resort
+          window.location.href = "/dashboard"
+        }
+      }
+
+      // ✅ Small delay to ensure auth state is fully settled
+      const redirectTimer = setTimeout(redirectToDashboard, 100)
+
+      return () => clearTimeout(redirectTimer)
     }
   }, [user, authLoading, router])
 
@@ -71,9 +96,9 @@ export default function SignIn() {
 
       console.log("✅ Sign in successful for:", data.user.email)
 
-      // ✅ The AuthProvider will handle the rest automatically
-      // Just redirect to dashboard
-      router.replace("/dashboard")
+      // ✅ DON'T redirect here - let the useEffect handle it
+      // The AuthProvider will update the user state and trigger the redirect
+      // router.replace("/dashboard") // ← REMOVED THIS LINE
     } catch (err: any) {
       console.error("❌ Sign in error:", err)
 

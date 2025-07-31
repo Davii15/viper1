@@ -26,9 +26,9 @@ export async function updateSession(request: NextRequest) {
   )
 
   try {
-    // ✅ Add timeout to prevent middleware from hanging
+    // ✅ Reduced timeout to prevent hanging
     const authPromise = supabase.auth.getUser()
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Auth timeout")), 3000))
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Auth timeout")), 2000)) // Reduced from 3000ms
 
     const {
       data: { user },
@@ -70,11 +70,23 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    // If user is authenticated and trying to access auth routes (except callback)
+    // ✅ MODIFIED: Be less aggressive with auth route redirects
+    // Only redirect if user is authenticated AND not in a callback AND not currently signing in
     if (user && isAuthRoute && !isCallbackRoute) {
-      console.log("✅ Middleware: Redirecting authenticated user to dashboard")
-      url.pathname = "/dashboard"
-      return NextResponse.redirect(url)
+      // ✅ Add a small delay check to avoid race conditions during sign-in
+      const userAgent = request.headers.get("user-agent") || ""
+      const isLikelyBrowser = userAgent.includes("Mozilla")
+
+      if (isLikelyBrowser && pathname === "/auth/signin") {
+        // ✅ For sign-in page, be more cautious about redirecting
+        // Let the client-side handle the redirect to avoid race conditions
+        console.log("⚠️ Middleware: User authenticated on signin page, letting client handle redirect")
+        return supabaseResponse
+      } else {
+        console.log("✅ Middleware: Redirecting authenticated user to dashboard")
+        url.pathname = "/dashboard"
+        return NextResponse.redirect(url)
+      }
     }
 
     // Allow all other routes (including callback)

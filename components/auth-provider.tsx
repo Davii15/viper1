@@ -60,10 +60,12 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
     }
   }, [])
 
-  // ✅ Initialize auth state
+  // ✅ Initialize auth state with deduplication
   useEffect(() => {
     let mounted = true
     let authSubscription: any = null
+    let lastEventId: string | null = null // ✅ Track last processed event
+    let processingAuth = false // ✅ Prevent concurrent processing
 
     const initializeAuth = async () => {
       try {
@@ -115,12 +117,24 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
       }
     }
 
-    // ✅ Set up auth state listener
+    // ✅ Set up auth state listener with deduplication
     const setupAuthListener = () => {
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (!mounted) return
+        if (!mounted || processingAuth) return
+
+        // ✅ Create unique event ID to prevent duplicate processing
+        const eventId = `${event}-${session?.user?.id || "none"}-${Date.now()}`
+
+        // ✅ Skip if we just processed this type of event for this user
+        if (lastEventId && lastEventId.startsWith(`${event}-${session?.user?.id || "none"}`)) {
+          console.log(`⏭️ AuthProvider: Skipping duplicate ${event} event`)
+          return
+        }
+
+        lastEventId = eventId
+        processingAuth = true
 
         console.log("🔄 AuthProvider: Auth state changed:", event)
 
@@ -146,12 +160,30 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
             if (mounted) {
               setUser(profile)
             }
+          } else if (event === "INITIAL_SESSION" && session?.user) {
+            console.log("🔄 AuthProvider: Initial session detected")
+            // Only process if we don't already have a user
+            if (!user) {
+              const profile = await fetchUserProfile(session.user.id)
+              if (mounted) {
+                setUser(profile)
+                setLoading(false)
+              }
+            }
           }
         } catch (error) {
           console.error("❌ AuthProvider: Auth state change error:", error)
           if (mounted) {
             setLoading(false)
           }
+        } finally {
+          processingAuth = false
+          // ✅ Clear the event ID after a delay to allow for legitimate subsequent events
+          setTimeout(() => {
+            if (lastEventId === eventId) {
+              lastEventId = null
+            }
+          }, 1000)
         }
       })
 
@@ -165,11 +197,13 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
     // ✅ Cleanup
     return () => {
       mounted = false
+      processingAuth = false
+      lastEventId = null
       if (authSubscription) {
         authSubscription.unsubscribe()
       }
     }
-  }, [fetchUserProfile, initialUser])
+  }, [fetchUserProfile, initialUser, user]) // ✅ Add user to dependencies
 
   // ✅ Sign out function
   const handleSignOut = useCallback(async () => {
