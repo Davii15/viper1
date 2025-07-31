@@ -2,8 +2,8 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useCallback } from "react"
-import { supabase } from "@/lib/supabase/client" // Corrected import path
-import type { User as CustomUser } from "@/lib/supabase/client" // Corrected import path
+import { supabaseBrowser as supabase } from "@/lib/supabase/client" // Corrected import: alias supabaseBrowser to supabase
+import type { User as CustomUser } from "@/lib/supabase/client"
 
 interface AuthContextType {
   user: CustomUser | null
@@ -22,9 +22,8 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children, initialSession, initialUser }: AuthProviderProps) {
   const [user, setUser] = useState<CustomUser | null>(initialUser)
-  const [loading, setLoading] = useState(!initialUser) // ✅ Start with false if we have initial user
+  const [loading, setLoading] = useState(!initialUser) // Start with false if we have initial user
 
-  // ✅ Memoize fetchUserProfile to prevent recreation
   const fetchUserProfile = useCallback(async (userId: string): Promise<CustomUser | null> => {
     try {
       console.log("🔄 AuthProvider: Fetching profile for:", userId)
@@ -42,7 +41,6 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
 
       console.log("✅ AuthProvider: Profile loaded:", profile.email)
 
-      // ✅ Update last seen (fire and forget)
       supabase
         .from("users")
         .update({
@@ -60,18 +58,16 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
     }
   }, [])
 
-  // ✅ Initialize auth state with deduplication and proper dependency management
   useEffect(() => {
     let mounted = true
     let authSubscription: any = null
-    let lastEventId: string | null = null // ✅ Track last processed event
-    let processingAuth = false // ✅ Prevent concurrent processing
+    let lastEventId: string | null = null
+    let processingAuth = false
 
     const initializeAuth = async () => {
       try {
         console.log("🔄 AuthProvider: Starting initialization...")
 
-        // ✅ If we have initial user from server, we're done
         if (initialUser) {
           console.log("✅ AuthProvider: Using initial user from server:", initialUser.email)
           setUser(initialUser)
@@ -79,7 +75,6 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
           return
         }
 
-        // ✅ Check current session
         const {
           data: { session },
           error: sessionError,
@@ -117,17 +112,14 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
       }
     }
 
-    // ✅ Set up auth state listener with deduplication
     const setupAuthListener = () => {
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (!mounted || processingAuth) return
 
-        // ✅ Create unique event ID to prevent duplicate processing
         const eventId = `${event}-${session?.user?.id || "none"}-${Date.now()}`
 
-        // ✅ Skip if we just processed this type of event for this user
         if (lastEventId && lastEventId.startsWith(`${event}-${session?.user?.id || "none"}`)) {
           console.log(`⏭️ AuthProvider: Skipping duplicate ${event} event`)
           return
@@ -155,17 +147,13 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
             }
           } else if (event === "TOKEN_REFRESHED" && session?.user) {
             console.log("🔄 AuthProvider: Token refreshed")
-            // Don't set loading for token refresh, just update profile silently
             const profile = await fetchUserProfile(session.user.id)
             if (mounted) {
               setUser(profile)
             }
           } else if (event === "INITIAL_SESSION" && session?.user) {
             console.log("🔄 AuthProvider: Initial session detected")
-            // Only process if we don't already have a user
-            // This check is crucial to prevent re-fetching if user is already set from initialUser prop
             if (!user) {
-              // Keep this check
               const profile = await fetchUserProfile(session.user.id)
               if (mounted) {
                 setUser(profile)
@@ -180,7 +168,6 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
           }
         } finally {
           processingAuth = false
-          // ✅ Clear the event ID after a delay to allow for legitimate subsequent events
           setTimeout(() => {
             if (lastEventId === eventId) {
               lastEventId = null
@@ -192,11 +179,9 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
       authSubscription = subscription
     }
 
-    // ✅ Initialize everything
     initializeAuth()
     setupAuthListener()
 
-    // ✅ Cleanup
     return () => {
       mounted = false
       processingAuth = false
@@ -205,9 +190,8 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
         authSubscription.unsubscribe()
       }
     }
-  }, [fetchUserProfile, initialUser]) // ✅ Removed 'user' from dependencies
+  }, [fetchUserProfile, initialUser]) // Removed 'user' from dependencies
 
-  // ✅ Sign out function
   const handleSignOut = useCallback(async () => {
     try {
       console.log("🚪 AuthProvider: Signing out...")
@@ -219,18 +203,15 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
       setUser(null)
       console.log("✅ AuthProvider: Sign out successful")
 
-      // ✅ Redirect to sign in
       window.location.href = "/auth/signin"
     } catch (error) {
       console.error("❌ AuthProvider: Sign out error:", error)
-      // Force redirect even if sign out fails
       window.location.href = "/auth/signin"
     } finally {
       setLoading(false)
     }
   }, [])
 
-  // ✅ Refresh user function
   const refreshUser = useCallback(async () => {
     const {
       data: { session },
@@ -241,7 +222,6 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
     }
   }, [fetchUserProfile])
 
-  // ✅ Context value
   const value = {
     user,
     loading,
@@ -252,7 +232,6 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-// ✅ Custom hook to use auth context
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {
@@ -261,19 +240,12 @@ export function useAuth() {
   return context
 }
 
-// ✅ Hook to require authentication WITHOUT aggressive timeouts
 export function useRequireAuth() {
   const { user, loading } = useAuth()
 
   useEffect(() => {
-    // ✅ REMOVED aggressive timeout that was causing the loop
-    // Let middleware handle redirects instead of client-side timeouts
-
-    // ✅ Only redirect if we're certain there's no user and not loading
     if (!loading && !user) {
       console.log("🔒 useRequireAuth: No user found after loading complete")
-      // Let the middleware handle this instead of forcing a redirect
-      // The middleware will catch this and redirect appropriately
     }
   }, [user, loading])
 
