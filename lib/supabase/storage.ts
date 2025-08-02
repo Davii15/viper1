@@ -1,47 +1,85 @@
-import { supabaseBrowser } from "./client" // Corrected import
-import { v4 as uuidv4 } from "uuid"
+import { createClient } from "./client"
 
-export async function uploadFileToSupabase(
+const supabase = createClient()
+
+export const uploadFileToSupabase = async (
   file: File,
-  bucketName: string,
+  bucket: string,
   folder: string,
   onProgress?: (progress: number) => void,
-): Promise<string | null> {
-  const fileExtension = file.name.split(".").pop()
-  const fileName = `${folder}/${uuidv4()}.${fileExtension}`
+): Promise<string | null> => {
+  try {
+    console.log("📤 Uploading file to Supabase:", file.name)
 
-  const { data, error } = await supabaseBrowser.storage.from(bucketName).upload(fileName, file, {
-    // Using supabaseBrowser
-    cacheControl: "3600",
-    upsert: false,
-    // You can add a transform option here if you want to resize/optimize images on upload
-    // transform: {
-    //   width: 500,
-    //   height: 500,
-    //   resize: 'contain',
-    // },
-  })
+    // Create unique filename
+    const fileExt = file.name.split(".").pop()
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+    const filePath = `${folder}/${fileName}`
 
-  if (error) {
-    console.error("Error uploading file:", error)
+    // Simulate progress for better UX
+    if (onProgress) {
+      onProgress(10)
+    }
+
+    // Upload file
+    const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+    })
+
+    if (uploadError) {
+      console.error("❌ Upload error:", uploadError)
+      throw uploadError
+    }
+
+    if (onProgress) {
+      onProgress(90)
+    }
+
+    // Get public URL
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from(bucket).getPublicUrl(filePath)
+
+    if (onProgress) {
+      onProgress(100)
+    }
+
+    console.log("✅ File uploaded successfully:", publicUrl)
+    return publicUrl
+  } catch (error) {
+    console.error("❌ Error uploading file:", error)
     throw error
   }
-
-  // Get public URL
-  const { data: publicUrlData } = supabaseBrowser.storage.from(bucketName).getPublicUrl(fileName) // Using supabaseBrowser
-
-  return publicUrlData.publicUrl
 }
 
-export async function deleteFileFromSupabase(url: string, bucketName: string): Promise<boolean> {
-  const pathSegments = url.split("/")
-  const fileNameWithFolder = pathSegments.slice(pathSegments.indexOf(bucketName) + 1).join("/")
+export const deleteFileFromSupabase = async (fileUrl: string, bucket: string): Promise<void> => {
+  try {
+    console.log("🗑️ Deleting file from Supabase:", fileUrl)
 
-  const { data, error } = await supabaseBrowser.storage.from(bucketName).remove([fileNameWithFolder]) // Using supabaseBrowser
+    // Extract file path from URL
+    const urlParts = fileUrl.split("/")
+    const fileName = urlParts[urlParts.length - 1]
+    const folderName = urlParts[urlParts.length - 2]
+    const filePath = `${folderName}/${fileName}`
 
-  if (error) {
-    console.error("Error deleting file:", error)
-    return false
+    const { error } = await supabase.storage.from(bucket).remove([filePath])
+
+    if (error) {
+      console.error("❌ Delete error:", error)
+      throw error
+    }
+
+    console.log("✅ File deleted successfully")
+  } catch (error) {
+    console.error("❌ Error deleting file:", error)
+    throw error
   }
-  return true
+}
+
+export const getFileUrl = (bucket: string, filePath: string): string => {
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(bucket).getPublicUrl(filePath)
+  return publicUrl
 }

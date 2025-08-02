@@ -28,7 +28,6 @@ export default function AuthCallback() {
       const error = searchParams.get("error")
       const errorDescription = searchParams.get("error_description")
 
-      // ✅ Check for URL errors first
       if (error) {
         console.error("❌ URL callback error:", error, errorDescription)
         throw new Error(errorDescription || error)
@@ -42,13 +41,11 @@ export default function AuthCallback() {
       console.log("🔄 Processing verification code...")
       setMessage("Processing verification code...")
 
-      // ✅ Exchange code for session
       const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
 
       if (sessionError) {
         console.error("❌ Session exchange error:", sessionError)
 
-        // ✅ Handle specific session errors
         if (sessionError.message?.includes("expired")) {
           throw new Error("Verification link has expired. Please request a new one.")
         } else if (sessionError.message?.includes("invalid")) {
@@ -66,14 +63,12 @@ export default function AuthCallback() {
 
       console.log("✅ Email verified successfully for:", sessionData.user.email)
 
-      // ✅ Create user profile with proper error handling
       setMessage("Setting up your global account...")
       await createUserProfile(sessionData.user)
 
       setStatus("success")
       setMessage("Karibu Posti! Your global account is ready! 🌍")
 
-      // ✅ Redirect to dashboard after success
       setTimeout(() => {
         console.log("🚀 Redirecting to dashboard...")
         router.replace("/dashboard")
@@ -83,7 +78,6 @@ export default function AuthCallback() {
       setStatus("error")
       setErrorDetails(error.message || "Unknown error occurred")
 
-      // ✅ Provide helpful error messages
       let userMessage = "Verification failed. Please try again."
 
       if (error.message?.includes("expired")) {
@@ -104,19 +98,16 @@ export default function AuthCallback() {
     }
   }
 
-  // ✅ Create user profile with proper error handling
   const createUserProfile = async (user: any) => {
     try {
       console.log("👤 Creating user profile...")
 
-      // ✅ First check if profile already exists
       const { data: existingProfile, error: checkError } = await supabase
         .from("users")
         .select("id, verified")
         .eq("id", user.id)
         .single()
 
-      // ✅ If profile exists, just update verification status
       if (existingProfile) {
         console.log("✅ Profile exists, updating verification status...")
 
@@ -131,14 +122,12 @@ export default function AuthCallback() {
 
         if (updateError) {
           console.warn("⚠️ Profile update failed:", updateError)
-          // Don't throw error - user is verified, this is secondary
         } else {
           console.log("✅ Profile verification updated")
         }
         return
       }
 
-      // ✅ Create new profile with all required fields
       const profileData = {
         id: user.id,
         email: user.email,
@@ -165,22 +154,18 @@ export default function AuthCallback() {
       if (insertError) {
         console.error("❌ Profile creation error:", insertError)
 
-        // ✅ Handle duplicate key error gracefully
         if (insertError.code === "23505") {
           console.log("✅ Profile already exists (duplicate key), continuing...")
           return
         }
 
-        // ✅ For other errors, don't fail the entire flow
         console.warn("⚠️ Profile creation failed, but user is verified:", insertError.message)
-        return // Don't throw - user verification is what matters
+        return
       }
 
       console.log("✅ User profile created successfully")
     } catch (error: any) {
       console.error("❌ Profile creation error:", error)
-
-      // ✅ Don't throw error here - user email is verified, profile creation is secondary
       console.warn("⚠️ Continuing without profile creation - user can complete setup later")
     }
   }

@@ -25,7 +25,6 @@ export default function VerifyEmail() {
     initializeVerificationPage()
   }, [])
 
-  // ✅ Countdown for resend button
   useEffect(() => {
     if (countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
@@ -33,16 +32,16 @@ export default function VerifyEmail() {
     }
   }, [countdown])
 
+  // ✅ Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && user) {
+      console.log("✅ User already verified, redirecting to dashboard")
+      router.replace("/dashboard")
+    }
+  }, [user, authLoading, router])
+
   const initializeVerificationPage = async () => {
     try {
-      // ✅ Check if user is already authenticated
-      if (!authLoading && user) {
-        console.log("✅ User already verified, redirecting to dashboard")
-        router.replace("/dashboard")
-        return
-      }
-
-      // ✅ Get email from URL params
       const email = searchParams.get("email")
       if (email) {
         setUserEmail(email)
@@ -61,7 +60,6 @@ export default function VerifyEmail() {
           setVerificationStatus("success")
           setMessage("Email verified successfully! Welcome to Posti! 🎉")
 
-          // ✅ Redirect to dashboard
           setTimeout(() => {
             router.replace("/dashboard")
           }, 2000)
@@ -95,7 +93,7 @@ export default function VerifyEmail() {
       if (error) throw error
 
       setMessage("New verification email sent! Please check your inbox and spam folder.")
-      setCountdown(60) // 60 second cooldown
+      setCountdown(60)
     } catch (error: any) {
       console.error("❌ Resend error:", error)
 
@@ -113,7 +111,6 @@ export default function VerifyEmail() {
     }
   }
 
-  // ✅ Don't render if user is authenticated (will redirect)
   if (user) {
     return null
   }
@@ -226,15 +223,6 @@ export default function VerifyEmail() {
                   <p className="text-green-600 text-sm mt-1">
                     Your account is now accessible from anywhere in the world
                   </p>
-                </div>
-                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-lg">
-                  <h4 className="font-semibold text-blue-800 mb-2">🌍 What you can do now:</h4>
-                  <ul className="text-sm text-blue-700 space-y-1">
-                    <li>• Write blogs from any device</li>
-                    <li>• Access your account from internet cafes</li>
-                    <li>• No need to carry your device everywhere</li>
-                    <li>• Your stories are safely stored in the cloud</li>
-                  </ul>
                 </div>
                 <p className="text-sm text-gray-500">Redirecting to your dashboard...</p>
               </motion.div>

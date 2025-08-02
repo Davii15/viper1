@@ -9,10 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Mail, Lock, User, Globe, ArrowRight, CheckCircle } from "lucide-react"
+import { Eye, EyeOff, Mail, Lock, User, Globe, ArrowRight, CheckCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { signUp } from "@/lib/auth"
 import { useAuth } from "@/components/auth-provider"
 
 const africanCountries = [
@@ -146,24 +146,12 @@ export default function SignUp() {
     try {
       console.log("🔄 Starting sign up process...")
 
-      // ✅ Sign up with Supabase Auth
-      const { data, error } = await supabase.auth.signUp({
-        email: formData.email.toLowerCase().trim(),
-        password: formData.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-          data: {
-            username: formData.username.toLowerCase().trim(),
-            full_name: formData.fullName.trim(),
-            country: formData.country || null,
-          },
-        },
+      // ✅ Use the centralized signUp function
+      const data = await signUp(formData.email, formData.password, {
+        username: formData.username.toLowerCase().trim(),
+        full_name: formData.fullName.trim(),
+        country: formData.country || null,
       })
-
-      if (error) {
-        console.error("❌ Sign up error:", error)
-        throw error
-      }
 
       if (!data.user) {
         throw new Error("No user data received")
@@ -195,6 +183,8 @@ export default function SignUp() {
         errorMessage = "Too many attempts. Please wait a moment and try again."
       } else if (err.message?.includes("network")) {
         errorMessage = "Network error. Please check your connection and try again."
+      } else if (err.message?.includes("User already registered")) {
+        errorMessage = "An account with this email already exists. Please sign in instead."
       } else if (err.message) {
         errorMessage = err.message
       }
@@ -216,10 +206,34 @@ export default function SignUp() {
     return null
   }
 
+  // ✅ Show loading state while auth is loading
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center text-white"
+        >
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
+          <p>Loading...</p>
+        </motion.div>
+      </div>
+    )
+  }
+
   // ✅ Show success state
   if (success) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-10 left-10 text-6xl animate-pulse">🎉</div>
+          <div className="absolute top-20 right-20 text-4xl animate-bounce">✨</div>
+          <div className="absolute bottom-20 left-20 text-5xl animate-pulse">🌍</div>
+          <div className="absolute bottom-10 right-10 text-4xl animate-bounce">📧</div>
+        </div>
+
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -227,22 +241,34 @@ export default function SignUp() {
         >
           <Card className="shadow-2xl border-0 bg-white/95 backdrop-blur-sm">
             <CardHeader className="text-center">
-              <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
                 <CheckCircle className="w-8 h-8 text-white" />
               </div>
               <CardTitle className="text-2xl font-bold text-green-600">Account Created! 🎉</CardTitle>
             </CardHeader>
             <CardContent className="text-center space-y-4">
               <p className="text-gray-600">
-                Welcome to Posti! We've sent a verification email to <strong>{formData.email}</strong>
+                Karibu Posti! We've sent a verification email to <strong>{formData.email}</strong>
               </p>
-              <div className="bg-blue-50 p-4 rounded-lg">
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                 <p className="text-blue-800 text-sm font-medium">📧 Check your email now!</p>
                 <p className="text-blue-600 text-xs mt-1">
-                  Click the verification link to activate your global account
+                  Click the verification link to activate your global Ubuntu account
                 </p>
               </div>
-              <p className="text-sm text-gray-500">Redirecting to verification page...</p>
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                <p className="text-green-800 text-sm font-medium">🌍 Global Account Benefits:</p>
+                <ul className="text-green-600 text-xs mt-1 space-y-1">
+                  <li>• Access from any device, anywhere</li>
+                  <li>• Write from internet cafes or friends' phones</li>
+                  <li>• Your stories are safely stored in the cloud</li>
+                  <li>• Connect with the Ubuntu community worldwide</li>
+                </ul>
+              </div>
+              <div className="flex items-center justify-center space-x-2 text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <p className="text-sm">Redirecting to verification page...</p>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
@@ -277,8 +303,9 @@ export default function SignUp() {
               Karibu Posti!
             </CardTitle>
             <p className="text-gray-600 mt-2">Join the African storytelling community</p>
-            <div className="bg-green-50 p-3 rounded-lg mt-4">
+            <div className="bg-green-50 p-3 rounded-lg mt-4 border border-green-200">
               <p className="text-green-800 text-sm font-medium">🌍 Create your global Ubuntu account!</p>
+              <p className="text-green-600 text-xs mt-1">Access your stories from anywhere in the world</p>
             </div>
           </CardHeader>
 
@@ -300,9 +327,10 @@ export default function SignUp() {
                       placeholder="John Doe"
                       value={formData.fullName}
                       onChange={(e) => handleInputChange("fullName", e.target.value)}
-                      className="pl-10"
+                      className="pl-10 touch-target"
                       required
                       disabled={loading}
+                      autoComplete="name"
                     />
                   </div>
                 </div>
@@ -313,9 +341,11 @@ export default function SignUp() {
                     id="username"
                     placeholder="johndoe"
                     value={formData.username}
-                    onChange={(e) => handleInputChange("username", e.target.value)}
+                    onChange={(e) => handleInputChange("username", e.target.value.toLowerCase())}
+                    className="touch-target"
                     required
                     disabled={loading}
+                    autoComplete="username"
                   />
                 </div>
               </div>
@@ -330,7 +360,7 @@ export default function SignUp() {
                     placeholder="john@example.com"
                     value={formData.email}
                     onChange={(e) => handleInputChange("email", e.target.value)}
-                    className="pl-10"
+                    className="pl-10 touch-target"
                     required
                     disabled={loading}
                     autoComplete="email"
@@ -347,7 +377,7 @@ export default function SignUp() {
                     onValueChange={(value) => handleInputChange("country", value)}
                     disabled={loading}
                   >
-                    <SelectTrigger className="pl-10">
+                    <SelectTrigger className="pl-10 touch-target">
                       <SelectValue placeholder="Select your country" />
                     </SelectTrigger>
                     <SelectContent>
@@ -371,7 +401,7 @@ export default function SignUp() {
                     placeholder="Create a password (min 6 characters)"
                     value={formData.password}
                     onChange={(e) => handleInputChange("password", e.target.value)}
-                    className="pl-10 pr-10"
+                    className="pl-10 pr-10 touch-target"
                     required
                     disabled={loading}
                     autoComplete="new-password"
@@ -379,8 +409,9 @@ export default function SignUp() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 touch-target"
                     disabled={loading}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -397,7 +428,7 @@ export default function SignUp() {
                     placeholder="Confirm your password"
                     value={formData.confirmPassword}
                     onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                    className="pl-10 pr-10"
+                    className="pl-10 pr-10 touch-target"
                     required
                     disabled={loading}
                     autoComplete="new-password"
@@ -405,8 +436,9 @@ export default function SignUp() {
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 touch-target"
                     disabled={loading}
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                   >
                     {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -415,12 +447,12 @@ export default function SignUp() {
 
               <Button
                 type="submit"
-                className="w-full bg-gradient-to-r from-orange-500 via-red-500 to-purple-600 hover:from-orange-600 hover:via-red-600 hover:to-purple-700 text-white py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
+                className="w-full bg-gradient-to-r from-orange-500 via-red-500 to-purple-600 hover:from-orange-600 hover:via-red-600 hover:to-purple-700 text-white py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 touch-target"
                 disabled={loading}
               >
                 {loading ? (
                   <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Creating account...</span>
                   </div>
                 ) : (
@@ -444,11 +476,23 @@ export default function SignUp() {
               </div>
 
               <Link href="/auth/signin" className="mt-4 block">
-                <Button variant="outline" className="w-full bg-transparent" disabled={loading}>
+                <Button
+                  variant="outline"
+                  className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 touch-target"
+                  disabled={loading}
+                >
                   <Globe className="w-4 h-4 mr-2" />
                   Ingia - Sign In
                 </Button>
               </Link>
+            </div>
+
+            {/* ✅ Additional mobile-friendly features */}
+            <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+              <p className="text-orange-800 text-xs font-medium">💡 Pro Tip:</p>
+              <p className="text-orange-600 text-xs mt-1">
+                After verification, you can access Posti from any device - your laptop, phone, or even internet cafes!
+              </p>
             </div>
           </CardContent>
         </Card>

@@ -2,124 +2,159 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase/client"
+import { useState } from "react"
+import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react"
 import Link from "next/link"
-import { useToast } from "@/components/ui/use-toast"
-import { useAuth } from "@/components/auth-provider"
+import { signIn } from "@/lib/auth"
+import { useRouter } from "next/navigation"
 
-export default function SignInPage() {
+export default function SignIn() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
   const router = useRouter()
-  const { toast } = useToast()
-  const { user: authUser, loading: authLoading } = useAuth()
 
-  useEffect(() => {
-    // If user is already authenticated and not in a loading state, redirect to dashboard
-    if (!authLoading && authUser) {
-      console.log("✅ User already authenticated, redirecting to dashboard")
-      router.replace("/dashboard")
-      // Return null to prevent rendering the sign-in form
-      // This component will unmount as the redirect happens
-      return
-    }
-  }, [authUser, authLoading, router])
-
-  const handleSignIn = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError("")
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) {
-        console.error("Sign in error:", error)
-        toast({
-          title: "Sign In Failed",
-          description: error.message,
-          variant: "destructive",
-        })
-      } else {
-        toast({
-          title: "Success!",
-          description: "You have been successfully logged in.",
-        })
-        // The AuthProvider's listener will handle the user state update and redirect
-        // We don't need an explicit router.push here, as the useEffect above will catch it
-      }
-    } catch (error) {
-      console.error("Unexpected sign in error:", error)
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred during sign in.",
-        variant: "destructive",
-      })
+      await signIn(email, password)
+      router.push("/dashboard")
+    } catch (err: any) {
+      setError(err.message || "Failed to sign in")
     } finally {
       setLoading(false)
     }
   }
 
-  // If authentication is still loading or user is already authenticated, don't render the form
-  if (authLoading || authUser) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-100">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    )
-  }
-
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl text-center">Sign in to your account</CardTitle>
-          <CardDescription className="text-center">Enter your email and password below to login</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSignIn} className="space-y-4">
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="m@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+    <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
+      {/* African Pattern Background */}
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute top-10 left-10 text-6xl animate-pulse">🌍</div>
+        <div className="absolute top-20 right-20 text-4xl animate-bounce">🦁</div>
+        <div className="absolute bottom-20 left-20 text-5xl animate-pulse">🌴</div>
+        <div className="absolute bottom-10 right-10 text-4xl animate-bounce">🐘</div>
+        <div className="absolute top-1/2 left-1/4 text-3xl animate-pulse">🦒</div>
+        <div className="absolute top-1/3 right-1/3 text-3xl animate-bounce">🌺</div>
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="w-full max-w-md relative z-10"
+      >
+        <Card className="shadow-2xl border-0 bg-white/95 backdrop-blur-sm">
+          <CardHeader className="text-center pb-2">
+            <div className="w-16 h-16 bg-gradient-to-r from-orange-500 via-red-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <span className="text-2xl">✨</span>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
+              Karibu Tena!
+            </CardTitle>
+            <p className="text-gray-600 mt-2">Welcome back to Posti</p>
+          </CardHeader>
+
+          <CardContent className="space-y-6">
+            {error && (
+              <Alert className="border-red-200 bg-red-50">
+                <AlertDescription className="text-red-700">{error}</AlertDescription>
+              </Alert>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-10 pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full bg-gradient-to-r from-orange-500 via-red-500 to-purple-600 hover:from-orange-600 hover:via-red-600 hover:to-purple-700 text-white py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
+                disabled={loading}
+              >
+                {loading ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Signing in...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <span>Ingia - Sign In</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </div>
+                )}
+              </Button>
+            </form>
+
+            <div className="text-center space-y-4">
+              <Link href="/auth/forgot-password" className="text-sm text-blue-600 hover:underline">
+                Forgot your password?
+              </Link>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">Don't have an account?</span>
+                </div>
+              </div>
+
+              <Link href="/auth/signup">
+                <Button variant="outline" className="w-full bg-transparent">
+                  Jisajili - Sign Up
+                </Button>
+              </Link>
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Signing In..." : "Sign In"}
-            </Button>
-          </form>
-          <div className="mt-4 text-center text-sm">
-            Don&apos;t have an account?{" "}
-            <Link href="/auth/signup" className="underline">
-              Sign Up
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   )
 }

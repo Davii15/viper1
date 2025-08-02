@@ -4,7 +4,6 @@ import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/components/auth-provider"
 import "./globals.css"
-import { createServerSupabaseClient } from "@/lib/supabase/server"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -20,7 +19,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://posti.africa",
+    url: "https://posti-phi.vercel.app",
     title: "Posti - Where African Stories Come to Life",
     description: "The ultimate African platform for creators, writers, and storytellers.",
     siteName: "Posti",
@@ -34,69 +33,32 @@ export const metadata: Metadata = {
   generator: "smart_devs",
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  // ✅ Get server-side session and user data with timeout
-  let initialSession = null
-  let initialUser = null
-
-  try {
-    // ✅ Add timeout to server-side auth check
-    const authPromise = (async () => {
-      const supabase = await createServerSupabaseClient()
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      if (sessionError) {
-        console.error("❌ Layout: Session error:", sessionError)
-        return { session: null, user: null }
-      }
-
-      if (session?.user) {
-        console.log("✅ Layout: Server session found for:", session.user.email)
-
-        // ✅ Get user profile from database
-        const { data: profile, error: profileError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", session.user.id)
-          .single()
-
-        if (profileError) {
-          if (profileError.code !== "PGRST116") {
-            console.error("❌ Layout: Profile fetch error:", profileError)
-          }
-          return { session, user: null }
-        }
-
-        console.log("✅ Layout: User profile loaded:", profile.email)
-        return { session, user: profile }
-      }
-
-      console.log("ℹ️ Layout: No server session found")
-      return { session: null, user: null }
-    })()
-
-    // ✅ Race against timeout
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Server auth timeout")), 3000))
-
-    const result = await Promise.race([authPromise, timeoutPromise])
-    initialSession = result.session
-    initialUser = result.user
-  } catch (error) {
-    console.error("❌ Layout: Server auth check failed:", error)
-    // Continue with null values - client will handle auth
-  }
-
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Prevent ServiceWorker issues in preview environments */}
+        {/* ✅ Mobile viewport optimization */}
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+
+        {/* ✅ PWA and mobile app capabilities */}
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Posti" />
+
+        {/* ✅ Prevent zoom on input focus (iOS Safari) */}
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="format-detection" content="email=no" />
+
+        {/* ✅ Theme colors for mobile browsers */}
+        <meta name="theme-color" content="#f97316" />
+        <meta name="msapplication-TileColor" content="#f97316" />
+
+        {/* ✅ Prevent ServiceWorker issues in preview environments */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -108,18 +70,22 @@ export default async function RootLayout({
                   }
                 });
               }
+              
+              // Fix viewport height on mobile
+              function setVH() {
+                let vh = window.innerHeight * 0.01;
+                document.documentElement.style.setProperty('--vh', vh + 'px');
+              }
+              setVH();
+              window.addEventListener('resize', setVH);
+              window.addEventListener('orientationchange', setVH);
             `,
           }}
         />
-        {/* Email verification meta tags */}
-        <meta name="format-detection" content="email=no" />
-        <meta name="format-detection" content="telephone=no" />
       </head>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange={false}>
-          <AuthProvider initialSession={initialSession} initialUser={initialUser}>
-            {children}
-          </AuthProvider>
+          <AuthProvider>{children}</AuthProvider>
         </ThemeProvider>
       </body>
     </html>

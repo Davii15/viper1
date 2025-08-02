@@ -1,12 +1,52 @@
-import { createBrowserClient } from "@supabase/ssr"
+import { createClient } from "@supabase/supabase-js"
 
-// Create browser client
-function createClient() {
-  return createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Export singleton instance
-export const supabase = createClient()
+// ✅ Single, consistent Supabase client for the entire app
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    flowType: "pkce",
+    // ✅ Enhanced mobile-friendly storage
+    storage:
+      typeof window !== "undefined"
+        ? {
+            getItem: (key: string) => {
+              try {
+                return window.localStorage.getItem(key)
+              } catch (error) {
+                console.warn("LocalStorage access failed, using memory storage:", error)
+                return null
+              }
+            },
+            setItem: (key: string, value: string) => {
+              try {
+                window.localStorage.setItem(key, value)
+              } catch (error) {
+                console.warn("LocalStorage write failed:", error)
+              }
+            },
+            removeItem: (key: string) => {
+              try {
+                window.localStorage.removeItem(key)
+              } catch (error) {
+                console.warn("LocalStorage remove failed:", error)
+              }
+            },
+          }
+        : undefined,
+    storageKey: "posti-auth-token",
+    debug: false, // Always false for production stability
+  },
+  global: {
+    headers: {
+      "X-Client-Info": "posti-web-app",
+    },
+  },
+})
 
 // Types
 export interface User {

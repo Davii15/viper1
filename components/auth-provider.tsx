@@ -2,11 +2,12 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useCallback } from "react"
-import { supabaseBrowser as supabase } from "@/lib/supabase/client" // Corrected import: alias supabaseBrowser to supabase
-import type { User as CustomUser } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase"
+import type { User } from "@/lib/supabase"
+import { useRouter } from "next/navigation"
 
 interface AuthContextType {
-  user: CustomUser | null
+  user: User | null
   loading: boolean
   signOut: () => Promise<void>
   refreshUser: () => Promise<void>
@@ -16,15 +17,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 interface AuthProviderProps {
   children: React.ReactNode
-  initialSession: any
-  initialUser: CustomUser | null
 }
 
-export function AuthProvider({ children, initialSession, initialUser }: AuthProviderProps) {
-  const [user, setUser] = useState<CustomUser | null>(initialUser)
-  const [loading, setLoading] = useState(!initialUser) // Start with false if we have initial user
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [initialized, setInitialized] = useState(false)
+  const router = useRouter()
 
-  const fetchUserProfile = useCallback(async (userId: string): Promise<CustomUser | null> => {
+  const fetchUserProfile = useCallback(async (userId: string): Promise<User | null> => {
     try {
       console.log("🔄 AuthProvider: Fetching profile for:", userId)
 
@@ -41,6 +42,7 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
 
       console.log("✅ AuthProvider: Profile loaded:", profile.email)
 
+      // ✅ Update last seen (non-blocking)
       supabase
         .from("users")
         .update({
@@ -58,33 +60,25 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
     }
   }, [])
 
+  // ✅ Initialize auth state once
   useEffect(() => {
     let mounted = true
-    let authSubscription: any = null
-    let lastEventId: string | null = null
-    let processingAuth = false
 
     const initializeAuth = async () => {
       try {
-        console.log("🔄 AuthProvider: Starting initialization...")
-
-        if (initialUser) {
-          console.log("✅ AuthProvider: Using initial user from server:", initialUser.email)
-          setUser(initialUser)
-          setLoading(false)
-          return
-        }
+        console.log("🔄 AuthProvider: Initializing...")
 
         const {
           data: { session },
-          error: sessionError,
+          error,
         } = await supabase.auth.getSession()
 
-        if (sessionError) {
-          console.error("❌ AuthProvider: Session error:", sessionError)
+        if (error) {
+          console.error("❌ AuthProvider: Session error:", error)
           if (mounted) {
             setUser(null)
             setLoading(false)
+            setInitialized(true)
           }
           return
         }
@@ -95,12 +89,14 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
           if (mounted) {
             setUser(profile)
             setLoading(false)
+            setInitialized(true)
           }
         } else {
           console.log("ℹ️ AuthProvider: No session found")
           if (mounted) {
             setUser(null)
             setLoading(false)
+            setInitialized(true)
           }
         }
       } catch (error) {
@@ -108,89 +104,70 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
         if (mounted) {
           setUser(null)
           setLoading(false)
+          setInitialized(true)
         }
       }
-    }
-
-    const setupAuthListener = () => {
-      const {
-        data: { subscription },
-      } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (!mounted || processingAuth) return
-
-        const eventId = `${event}-${session?.user?.id || "none"}-${Date.now()}`
-
-        if (lastEventId && lastEventId.startsWith(`${event}-${session?.user?.id || "none"}`)) {
-          console.log(`⏭️ AuthProvider: Skipping duplicate ${event} event`)
-          return
-        }
-
-        lastEventId = eventId
-        processingAuth = true
-
-        console.log("🔄 AuthProvider: Auth state changed:", event)
-
-        try {
-          if (event === "SIGNED_IN" && session?.user) {
-            console.log("✅ AuthProvider: User signed in:", session.user.email)
-            setLoading(true)
-            const profile = await fetchUserProfile(session.user.id)
-            if (mounted) {
-              setUser(profile)
-              setLoading(false)
-            }
-          } else if (event === "SIGNED_OUT") {
-            console.log("🚪 AuthProvider: User signed out")
-            if (mounted) {
-              setUser(null)
-              setLoading(false)
-            }
-          } else if (event === "TOKEN_REFRESHED" && session?.user) {
-            console.log("🔄 AuthProvider: Token refreshed")
-            const profile = await fetchUserProfile(session.user.id)
-            if (mounted) {
-              setUser(profile)
-            }
-          } else if (event === "INITIAL_SESSION" && session?.user) {
-            console.log("🔄 AuthProvider: Initial session detected")
-            if (!user) {
-              const profile = await fetchUserProfile(session.user.id)
-              if (mounted) {
-                setUser(profile)
-                setLoading(false)
-              }
-            }
-          }
-        } catch (error) {
-          console.error("❌ AuthProvider: Auth state change error:", error)
-          if (mounted) {
-            setLoading(false)
-          }
-        } finally {
-          processingAuth = false
-          setTimeout(() => {
-            if (lastEventId === eventId) {
-              lastEventId = null
-            }
-          }, 1000)
-        }
-      })
-
-      authSubscription = subscription
     }
 
     initializeAuth()
-    setupAuthListener()
 
     return () => {
       mounted = false
-      processingAuth = false
-      lastEventId = null
-      if (authSubscription) {
-        authSubscription.unsubscribe()
-      }
     }
-  }, [fetchUserProfile, initialUser]) // Removed 'user' from dependencies
+  }, [fetchUserProfile])
+
+  // ✅ Listen for auth changes only after initialization
+  useEffect(() => {
+    if (!initialized) return
+
+    let mounted = true
+    let processingAuth = false
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted || processingAuth) return
+
+      processingAuth = true
+      console.log("🔄 AuthProvider: Auth state changed:", event)
+
+      try {
+        if (event === "SIGNED_IN" && session?.user) {
+          console.log("✅ AuthProvider: User signed in:", session.user.email)
+          const profile = await fetchUserProfile(session.user.id)
+          if (mounted) {
+            setUser(profile)
+            setLoading(false)
+          }
+        } else if (event === "SIGNED_OUT") {
+          console.log("🚪 AuthProvider: User signed out")
+          if (mounted) {
+            setUser(null)
+            setLoading(false)
+          }
+        } else if (event === "TOKEN_REFRESHED" && session?.user) {
+          console.log("🔄 AuthProvider: Token refreshed")
+          // Don't refetch profile on token refresh, just update session
+          if (mounted && !user) {
+            const profile = await fetchUserProfile(session.user.id)
+            setUser(profile)
+          }
+        }
+      } catch (error) {
+        console.error("❌ AuthProvider: Auth state change error:", error)
+        if (mounted) {
+          setLoading(false)
+        }
+      } finally {
+        processingAuth = false
+      }
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [initialized, fetchUserProfile, user])
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -203,14 +180,14 @@ export function AuthProvider({ children, initialSession, initialUser }: AuthProv
       setUser(null)
       console.log("✅ AuthProvider: Sign out successful")
 
-      window.location.href = "/auth/signin"
+      router.push("/auth/signin")
     } catch (error) {
       console.error("❌ AuthProvider: Sign out error:", error)
-      window.location.href = "/auth/signin"
+      router.push("/auth/signin")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [router])
 
   const refreshUser = useCallback(async () => {
     const {
@@ -242,12 +219,14 @@ export function useAuth() {
 
 export function useRequireAuth() {
   const { user, loading } = useAuth()
+  const router = useRouter()
 
   useEffect(() => {
     if (!loading && !user) {
-      console.log("🔒 useRequireAuth: No user found after loading complete")
+      console.log("🔒 useRequireAuth: Redirecting to signin")
+      router.push("/auth/signin")
     }
-  }, [user, loading])
+  }, [user, loading, router])
 
   return { user, loading }
 }

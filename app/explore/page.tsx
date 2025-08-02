@@ -7,28 +7,38 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Search, TrendingUp, Hash, Star, FlameIcon as Fire, ArrowLeft, Filter, Loader2 } from "lucide-react"
+import { Search, TrendingUp, Hash, Star, FlameIcon as Fire, ArrowLeft, Filter, Loader2, Plus } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { getCurrentUser } from "@/lib/auth"
-import { getTrendingPosts, getCategories, getPosts } from "@/lib/posts"
-import { BlogCard } from "@/components/blog-card"
-import type { Post, User } from "@/lib/supabase"
+import { useAuth } from "@/components/auth-provider"
+import type { Post, Category } from "@/lib/supabase"
+
+// Replace the imports with your actual implementations
+import {
+  getPosts,
+  getTrendingPosts,
+  getCategories,
+  likePost,
+  unlikePost,
+  bookmarkPost,
+  unbookmarkPost,
+} from "@/lib/posts"
 
 export default function Explore() {
-  const [user, setUser] = useState<User | null>(null)
+  // ✅ Use centralized auth system (optional auth for explore)
+  const { user, loading: authLoading } = useAuth()
+  const router = useRouter()
+
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("trending")
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([])
-  const [categories, setCategories] = useState<any[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [filteredPosts, setFilteredPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
   const [searchLoading, setSearchLoading] = useState(false)
 
-  const router = useRouter()
-
   useEffect(() => {
-    checkAuthAndLoadData()
+    loadData()
   }, [])
 
   useEffect(() => {
@@ -39,70 +49,142 @@ export default function Explore() {
     }
   }, [searchQuery, trendingPosts])
 
-  const checkAuthAndLoadData = async () => {
+  const loadData = async () => {
     try {
-      const currentUser = await getCurrentUser()
-      setUser(currentUser)
-
+      console.log("🔍 Loading explore data...")
       await Promise.all([loadTrendingPosts(), loadCategories()])
     } catch (error) {
-      console.error("Error loading data:", error)
+      console.error("❌ Error loading explore data:", error)
     } finally {
       setLoading(false)
     }
   }
 
+  // Update the loadTrendingPosts function:
   const loadTrendingPosts = async () => {
     try {
+      console.log("📈 Loading trending posts...")
+
       const posts = await getTrendingPosts(20)
       setTrendingPosts(posts)
       setFilteredPosts(posts)
+      console.log(`✅ Loaded ${posts.length} trending posts`)
     } catch (error) {
-      console.error("Error loading trending posts:", error)
+      console.error("❌ Error loading trending posts:", error)
+      setTrendingPosts([])
+      setFilteredPosts([])
     }
   }
 
+  // Update the loadCategories function:
   const loadCategories = async () => {
     try {
-      const data = await getCategories()
-      setCategories(data)
+      console.log("🏷️ Loading categories...")
+
+      const categoriesData = await getCategories()
+      setCategories(categoriesData)
+      console.log(`✅ Loaded ${categoriesData.length} categories`)
     } catch (error) {
-      console.error("Error loading categories:", error)
+      console.error("❌ Error loading categories:", error)
+      // Keep the default categories as fallback
+      const defaultCategories = [
+        { id: "1", name: "Technology", icon: "💻", color: "#3B82F6", description: "Tech news and tutorials" },
+        { id: "2", name: "Lifestyle", icon: "🌟", color: "#F59E0B", description: "Life tips and experiences" },
+        { id: "3", name: "Travel", icon: "✈️", color: "#10B981", description: "Travel stories and guides" },
+        { id: "4", name: "Food", icon: "🍽️", color: "#EF4444", description: "Recipes and food culture" },
+        { id: "5", name: "Business", icon: "💼", color: "#8B5CF6", description: "Business insights and tips" },
+      ]
+      setCategories(defaultCategories as Category[])
     }
   }
 
+  // Update the handleSearch function:
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
 
     setSearchLoading(true)
     try {
-      const { posts } = await getPosts({
+      console.log("🔍 Searching posts for:", searchQuery)
+
+      const response = await getPosts({
         search: searchQuery,
         limit: 20,
+        page: 1,
       })
-      setFilteredPosts(posts)
+
+      setFilteredPosts(response.posts)
+      console.log(`✅ Found ${response.posts.length} posts for search`)
     } catch (error) {
-      console.error("Error searching posts:", error)
+      console.error("❌ Error searching posts:", error)
+      setFilteredPosts([])
     } finally {
       setSearchLoading(false)
     }
   }
 
+  // Update the handleLike function:
   const handleLike = async (postId: string, isLiked: boolean) => {
-    // TODO: Implement like functionality
-    console.log("Like functionality to be implemented")
+    if (!user) {
+      router.push("/auth/signin")
+      return
+    }
+
+    try {
+      if (isLiked) {
+        await unlikePost(postId)
+      } else {
+        await likePost(postId)
+      }
+
+      // Update local state
+      const updatePosts = (posts: any[]) =>
+        posts.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                is_liked: !isLiked,
+                likes_count: post.likes_count + (isLiked ? -1 : 1),
+              }
+            : post,
+        )
+
+      setTrendingPosts(updatePosts)
+      setFilteredPosts(updatePosts)
+    } catch (error) {
+      console.error("❌ Error toggling like:", error)
+    }
   }
 
+  // Update the handleBookmark function:
   const handleBookmark = async (postId: string, isBookmarked: boolean) => {
-    // TODO: Implement bookmark functionality
-    console.log("Bookmark functionality to be implemented")
+    if (!user) {
+      router.push("/auth/signin")
+      return
+    }
+
+    try {
+      if (isBookmarked) {
+        await unbookmarkPost(postId)
+      } else {
+        await bookmarkPost(postId)
+      }
+
+      // Update local state
+      const updatePosts = (posts: any[]) =>
+        posts.map((post) => (post.id === postId ? { ...post, is_bookmarked: !isBookmarked } : post))
+
+      setTrendingPosts(updatePosts)
+      setFilteredPosts(updatePosts)
+    } catch (error) {
+      console.error("❌ Error toggling bookmark:", error)
+    }
   }
 
   const handlePostView = (postId: string) => {
     router.push(`/post/${postId}`)
   }
 
-  if (loading) {
+  if (loading && !authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
@@ -124,11 +206,11 @@ export default function Explore() {
       </div>
 
       {/* Header */}
-      <div className="bg-white shadow-sm border-b sticky top-0 z-30">
+      <div className="bg-white dark:bg-gray-800 shadow-sm border-b sticky top-0 z-30">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Link href="/dashboard">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" className="touch-target">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>
@@ -137,7 +219,7 @@ export default function Explore() {
           </div>
 
           <div className="flex items-center space-x-2">
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" className="touch-target">
               <Filter className="w-4 h-4" />
             </Button>
           </div>
@@ -153,7 +235,7 @@ export default function Explore() {
               placeholder="Search posts, users, topics..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 py-3 text-lg bg-white shadow-sm"
+              className="pl-12 py-3 text-lg bg-white shadow-sm touch-target"
             />
             {searchLoading && (
               <Loader2 className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 animate-spin text-gray-400" />
@@ -164,15 +246,15 @@ export default function Explore() {
         {/* Content Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-3 mb-8">
-            <TabsTrigger value="trending" className="flex items-center space-x-2">
+            <TabsTrigger value="trending" className="flex items-center space-x-2 touch-target">
               <TrendingUp className="w-4 h-4" />
               <span>Trending</span>
             </TabsTrigger>
-            <TabsTrigger value="topics" className="flex items-center space-x-2">
+            <TabsTrigger value="topics" className="flex items-center space-x-2 touch-target">
               <Hash className="w-4 h-4" />
               <span>Topics</span>
             </TabsTrigger>
-            <TabsTrigger value="featured" className="flex items-center space-x-2">
+            <TabsTrigger value="featured" className="flex items-center space-x-2 touch-target">
               <Star className="w-4 h-4" />
               <span>Featured</span>
             </TabsTrigger>
@@ -188,13 +270,13 @@ export default function Explore() {
                     Trending Now
                   </h2>
                   <div className="flex space-x-2">
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" className="touch-target bg-transparent">
                       Today
                     </Button>
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" className="touch-target">
                       This Week
                     </Button>
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" className="touch-target">
                       This Month
                     </Button>
                   </div>
@@ -208,27 +290,100 @@ export default function Explore() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 * index }}
                     >
-                      <BlogCard
-                        post={post}
-                        onLike={handleLike}
-                        onBookmark={handleBookmark}
-                        onView={handlePostView}
-                        layout="magazine"
-                      />
+                      <Card
+                        className="hover:shadow-lg transition-shadow cursor-pointer"
+                        onClick={() => handlePostView(post.id)}
+                      >
+                        <CardContent className="p-6">
+                          <div className="flex items-start space-x-4">
+                            {post.cover_image_url && (
+                              <div className="w-32 h-24 rounded-lg overflow-hidden flex-shrink-0">
+                                <img
+                                  src={post.cover_image_url || "/placeholder.svg"}
+                                  alt={post.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2 mb-2">
+                                <div className="w-8 h-8 bg-gradient-to-r from-orange-400 to-red-400 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                                  {post.user?.full_name?.[0] || "U"}
+                                </div>
+                                <div>
+                                  <div className="font-medium text-sm">{post.user?.full_name || "Unknown User"}</div>
+                                  <div className="text-xs text-gray-500">@{post.user?.username || "unknown"}</div>
+                                </div>
+                              </div>
+                              <h3 className="font-semibold text-lg mb-2 line-clamp-2">{post.title}</h3>
+                              {post.excerpt && (
+                                <p className="text-gray-600 dark:text-gray-400 text-sm mb-3 line-clamp-2">
+                                  {post.excerpt}
+                                </p>
+                              )}
+                              <div className="flex items-center justify-between text-sm text-gray-500">
+                                <div className="flex items-center space-x-4">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleLike(post.id, post.is_liked || false)
+                                    }}
+                                    className="flex items-center space-x-1 hover:text-red-500 transition-colors touch-target"
+                                  >
+                                    <span>❤️</span>
+                                    <span>{post.likes_count || 0}</span>
+                                  </button>
+                                  <span className="flex items-center space-x-1">
+                                    <span>👁️</span>
+                                    <span>{post.views_count || 0}</span>
+                                  </span>
+                                  <span className="flex items-center space-x-1">
+                                    <span>💬</span>
+                                    <span>{post.comments_count || 0}</span>
+                                  </span>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleBookmark(post.id, post.is_bookmarked || false)
+                                    }}
+                                    className="hover:text-blue-500 transition-colors touch-target"
+                                  >
+                                    🔖
+                                  </button>
+                                  <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
                     </motion.div>
                   ))
                 ) : (
                   <Card className="p-12 text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
                       <Search className="w-8 h-8 text-gray-400" />
                     </div>
                     <h3 className="text-xl font-bold mb-2">No posts found</h3>
-                    <p className="text-gray-600 mb-4">
+                    <p className="text-gray-600 dark:text-gray-400 mb-4">
                       {searchQuery ? `No results for "${searchQuery}"` : "No trending posts available"}
                     </p>
-                    <Link href="/create">
-                      <Button className="bg-gradient-to-r from-orange-500 to-red-500">Create First Post</Button>
-                    </Link>
+                    {user ? (
+                      <Link href="/create">
+                        <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 touch-target">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Create First Post
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Link href="/auth/signin">
+                        <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 touch-target">
+                          Sign In to Create Posts
+                        </Button>
+                      </Link>
+                    )}
                   </Card>
                 )}
               </div>
@@ -252,7 +407,7 @@ export default function Explore() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">Active Today</span>
-                        <span className="font-semibold">Live</span>
+                        <span className="font-semibold text-green-600">Live</span>
                       </div>
                     </div>
                   </CardContent>
@@ -266,7 +421,7 @@ export default function Explore() {
                   <CardContent>
                     <div className="space-y-2">
                       {categories.slice(0, 5).map((category, index) => (
-                        <Button key={category.id} variant="ghost" className="w-full justify-start text-sm">
+                        <Button key={category.id} variant="ghost" className="w-full justify-start text-sm touch-target">
                           <span className="w-6 h-6 rounded-full bg-gradient-to-r from-purple-400 to-blue-400 flex items-center justify-center text-white text-xs mr-3">
                             {category.icon}
                           </span>
@@ -276,6 +431,32 @@ export default function Explore() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Call to Action */}
+                {!user && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Join Posti Today!</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-gray-600 mb-4">
+                        Create your global Ubuntu account and start sharing your stories with the world.
+                      </p>
+                      <div className="space-y-2">
+                        <Link href="/auth/signup">
+                          <Button className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 touch-target">
+                            Create Account
+                          </Button>
+                        </Link>
+                        <Link href="/auth/signin">
+                          <Button variant="outline" className="w-full touch-target bg-transparent">
+                            Sign In
+                          </Button>
+                        </Link>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </div>
           </TabsContent>
@@ -289,11 +470,11 @@ export default function Explore() {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.05 * index }}
                 >
-                  <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+                  <Card className="hover:shadow-lg transition-shadow cursor-pointer touch-target">
                     <CardContent className="p-6 text-center">
                       <div className="text-3xl mb-2">{category.icon}</div>
                       <h3 className="font-semibold mb-2">{category.name}</h3>
-                      <p className="text-sm text-gray-600 mb-2">{category.description}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{category.description}</p>
                       <Badge variant="secondary" className="text-xs">
                         Active
                       </Badge>
@@ -308,10 +489,10 @@ export default function Explore() {
             <div className="text-center py-16">
               <Star className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
               <h2 className="text-2xl font-bold mb-4">Featured Content</h2>
-              <p className="text-gray-600 mb-8 max-w-md mx-auto">
+              <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md mx-auto">
                 Discover hand-picked content from our editorial team and community favorites.
               </p>
-              <Button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700">
+              <Button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 touch-target">
                 Coming Soon
               </Button>
             </div>

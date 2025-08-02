@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
@@ -33,20 +35,30 @@ import {
   Settings,
   LogOut,
   Loader2,
+  Camera,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useAuth, useRequireAuth } from "@/components/auth-provider"
-import { getUserPosts, getUserLikedPosts, getUserBookmarkedPosts } from "@/lib/posts"
-import { BlogCard } from "@/components/blog-card"
-import { AvatarUpload } from "@/components/avatar-upload"
 import { supabase } from "@/lib/supabase"
 import type { Post } from "@/lib/supabase"
 
+// Replace the mock functions with your actual implementations
+import {
+  getUserPosts,
+  getUserLikedPosts,
+  getUserBookmarkedPosts,
+  likePost,
+  unlikePost,
+  bookmarkPost,
+  unbookmarkPost,
+  trackPostView,
+} from "@/lib/posts"
+
 export default function Profile() {
-  // ✅ Use the new auth system
+  // ✅ Use the centralized auth system
   const { user, loading: authLoading } = useRequireAuth()
-  const { signOut } = useAuth()
+  const { signOut, refreshUser } = useAuth()
 
   const [userPosts, setUserPosts] = useState<Post[]>([])
   const [isEditing, setIsEditing] = useState(false)
@@ -55,6 +67,7 @@ export default function Profile() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [uploadError, setUploadError] = useState("")
+  const [avatarUploading, setAvatarUploading] = useState(false)
 
   // Edit form state
   const [editForm, setEditForm] = useState({
@@ -80,14 +93,17 @@ export default function Profile() {
 
   const router = useRouter()
 
+  // ✅ Load user data when user is available
   useEffect(() => {
-    if (user) {
+    if (user && !authLoading) {
       loadUserData()
     }
-  }, [user])
+  }, [user, authLoading])
 
   const loadUserData = async () => {
     if (!user) return
+
+    console.log("🔄 Loading user profile data...")
 
     setEditForm({
       full_name: user.full_name || "",
@@ -100,13 +116,17 @@ export default function Profile() {
     await Promise.all([loadUserPosts(user.id), loadUserStats(user.id)])
   }
 
+  // Update the loadUserPosts function to use your implementation:
   const loadUserPosts = async (userId: string) => {
     setPostsLoading(true)
     try {
-      const { posts } = await getUserPosts(userId, 1, 50)
-      setUserPosts(posts)
+      console.log("📝 Loading user posts...")
+      const response = await getUserPosts(userId, 1, 50)
+      setUserPosts(response.posts || [])
+      console.log(`✅ Loaded ${response.posts?.length || 0} user posts`)
     } catch (error) {
-      console.error("Error loading user posts:", error)
+      console.error("❌ Error loading user posts:", error)
+      setUserPosts([])
     } finally {
       setPostsLoading(false)
     }
@@ -114,14 +134,18 @@ export default function Profile() {
 
   const loadUserStats = async (userId: string) => {
     try {
+      console.log("📊 Loading user stats...")
+
       // Get user's posts and calculate stats
-      const { data: postsData } = await supabase
+      const { data: postsData, error: postsError } = await supabase
         .from("posts")
         .select("likes_count, views_count, comments_count")
         .eq("user_id", userId)
         .eq("status", "published")
 
-      // Get followers and following counts
+      if (postsError) throw postsError
+
+      // Get followers and following counts (if tables exist)
       const [followersResponse, followingResponse] = await Promise.all([
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", userId),
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", userId),
@@ -138,24 +162,72 @@ export default function Profile() {
         followers: followersResponse.count || 0,
         following: followingResponse.count || 0,
       })
+
+      console.log("✅ User stats loaded:", { totalPosts, totalLikes, totalViews })
     } catch (error) {
-      console.error("Error loading user stats:", error)
+      console.error("❌ Error loading user stats:", error)
+      // Set default stats on error
+      setStats({
+        totalPosts: userPosts.length,
+        totalLikes: 0,
+        totalViews: 0,
+        followers: 0,
+        following: 0,
+      })
     }
   }
 
-  // ✅ Handle avatar upload success
-  const handleAvatarUploadSuccess = (url: string) => {
-    console.log("✅ Avatar uploaded successfully:", url)
-    setEditForm({ ...editForm, avatar_url: url })
-    setUploadError("")
-    setSuccess("Profile photo uploaded! Don't forget to save your changes.")
-  }
+  // ✅ Handle avatar upload
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !user) return
 
-  // ✅ Handle avatar upload error
-  const handleAvatarUploadError = (error: string) => {
-    console.error("❌ Avatar upload error:", error)
-    setUploadError(error)
-    setSuccess("")
+    // Validate file
+    if (!file.type.startsWith("image/")) {
+      setUploadError("Please select an image file")
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("Image must be less than 5MB")
+      return
+    }
+
+    setAvatarUploading(true)
+    setUploadError("")
+
+    try {
+      console.log("📸 Uploading avatar...")
+
+      // Create unique filename
+      const fileExt = file.name.split(".").pop()
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`
+      const filePath = `avatars/${fileName}`
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage.from("media").upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      })
+
+      if (uploadError) throw uploadError
+
+      // Get public URL
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("media").getPublicUrl(filePath)
+
+      // Update form state
+      setEditForm({ ...editForm, avatar_url: publicUrl })
+      setSuccess("Profile photo uploaded! Don't forget to save your changes.")
+
+      console.log("✅ Avatar uploaded successfully:", publicUrl)
+    } catch (error: any) {
+      console.error("❌ Avatar upload error:", error)
+      setUploadError(error.message || "Failed to upload avatar")
+    } finally {
+      setAvatarUploading(false)
+    }
   }
 
   const handleSaveProfile = async () => {
@@ -172,11 +244,11 @@ export default function Profile() {
       const { error: updateError } = await supabase
         .from("users")
         .update({
-          full_name: editForm.full_name,
-          bio: editForm.bio,
-          location: editForm.location,
-          website: editForm.website,
-          avatar_url: editForm.avatar_url,
+          full_name: editForm.full_name.trim(),
+          bio: editForm.bio.trim() || null,
+          location: editForm.location.trim() || null,
+          website: editForm.website.trim() || null,
+          avatar_url: editForm.avatar_url || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id)
@@ -188,7 +260,7 @@ export default function Profile() {
       setIsEditing(false)
 
       // ✅ Refresh user data in auth context
-      // The AuthProvider will automatically sync the updated data
+      await refreshUser()
     } catch (error: any) {
       console.error("❌ Error updating profile:", error)
       setError(error.message || "Failed to update profile")
@@ -197,18 +269,67 @@ export default function Profile() {
     }
   }
 
+  // Update the handleLike function:
   const handleLike = async (postId: string, isLiked: boolean) => {
-    // TODO: Implement like functionality
-    console.log("Like functionality to be implemented")
+    if (!user) return
+
+    try {
+      if (isLiked) {
+        await unlikePost(postId)
+      } else {
+        await likePost(postId)
+      }
+
+      // Update local state
+      const updatePosts = (posts: any[]) =>
+        posts.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                is_liked: !isLiked,
+                likes_count: post.likes_count + (isLiked ? -1 : 1),
+              }
+            : post,
+        )
+
+      setUserPosts(updatePosts)
+      setLikedPosts(updatePosts)
+    } catch (error) {
+      console.error("❌ Error toggling like:", error)
+    }
   }
 
+  // Update the handleBookmark function:
   const handleBookmark = async (postId: string, isBookmarked: boolean) => {
-    // TODO: Implement bookmark functionality
-    console.log("Bookmark functionality to be implemented")
+    if (!user) return
+
+    try {
+      if (isBookmarked) {
+        await unbookmarkPost(postId)
+      } else {
+        await bookmarkPost(postId)
+      }
+
+      // Update local state
+      const updatePosts = (posts: any[]) =>
+        posts.map((post) => (post.id === postId ? { ...post, is_bookmarked: !isBookmarked } : post))
+
+      setUserPosts(updatePosts)
+      setBookmarkedPosts(updatePosts)
+    } catch (error) {
+      console.error("❌ Error toggling bookmark:", error)
+    }
   }
 
-  const handlePostView = (postId: string) => {
-    router.push(`/post/${postId}`)
+  // Update the handlePostView function:
+  const handlePostView = async (postId: string) => {
+    try {
+      await trackPostView(postId)
+      router.push(`/post/${postId}`)
+    } catch (error) {
+      console.error("❌ Error tracking view:", error)
+      router.push(`/post/${postId}`)
+    }
   }
 
   const formatDate = (dateString: string) => {
@@ -218,27 +339,31 @@ export default function Profile() {
     })
   }
 
+  // Update the loadLikedPosts function:
   const loadLikedPosts = async () => {
     if (!user) return
     setLikedLoading(true)
     try {
-      const { posts } = await getUserLikedPosts(user.id, 1, 50)
-      setLikedPosts(posts)
+      const response = await getUserLikedPosts(user.id, 1, 50)
+      setLikedPosts(response.posts || [])
     } catch (error) {
       console.error("Error loading liked posts:", error)
+      setLikedPosts([])
     } finally {
       setLikedLoading(false)
     }
   }
 
+  // Update the loadBookmarkedPosts function:
   const loadBookmarkedPosts = async () => {
     if (!user) return
     setBookmarkedLoading(true)
     try {
-      const { posts } = await getUserBookmarkedPosts(user.id, 1, 50)
-      setBookmarkedPosts(posts)
+      const response = await getUserBookmarkedPosts(user.id, 1, 50)
+      setBookmarkedPosts(response.posts || [])
     } catch (error) {
       console.error("Error loading bookmarked posts:", error)
+      setBookmarkedPosts([])
     } finally {
       setBookmarkedLoading(false)
     }
@@ -276,7 +401,7 @@ export default function Profile() {
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Link href="/dashboard">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" className="touch-target">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>
@@ -287,15 +412,15 @@ export default function Profile() {
           <div className="flex items-center space-x-2">
             {!isEditing ? (
               <>
-                <Button onClick={() => setIsEditing(true)} variant="outline" size="sm">
+                <Button onClick={() => setIsEditing(true)} variant="outline" size="sm" className="touch-target">
                   <Edit className="w-4 h-4 mr-2" />
-                  Edit Profile
+                  <span className="hidden sm:inline">Edit Profile</span>
                 </Button>
 
                 {/* ✅ Profile Menu with Sign Out */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" className="touch-target">
                       <MoreVertical className="w-4 h-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -340,11 +465,12 @@ export default function Profile() {
                   variant="ghost"
                   size="sm"
                   disabled={saving}
+                  className="touch-target"
                 >
                   <X className="w-4 h-4 mr-2" />
                   Cancel
                 </Button>
-                <Button onClick={handleSaveProfile} disabled={saving} size="sm">
+                <Button onClick={handleSaveProfile} disabled={saving} size="sm" className="touch-target">
                   {saving ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -387,29 +513,40 @@ export default function Profile() {
         {/* Profile Header */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <Card className="mb-8">
-            <CardContent className="p-8">
+            <CardContent className="p-6 md:p-8">
               <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-6">
                 {/* ✅ Avatar with Upload Functionality */}
                 <div className="flex flex-col items-center space-y-2">
-                  {isEditing ? (
-                    <AvatarUpload
-                      currentAvatarUrl={editForm.avatar_url}
-                      userName={user.full_name}
-                      onUploadSuccess={handleAvatarUploadSuccess}
-                      onUploadError={handleAvatarUploadError}
-                      disabled={saving}
-                      size="lg"
-                    />
-                  ) : (
+                  <div className="relative">
                     <Avatar className="w-24 h-24">
-                      <AvatarImage src={user.avatar_url || "/placeholder.svg"} />
-                      <AvatarFallback className="text-2xl">{user.full_name[0]}</AvatarFallback>
+                      <AvatarImage src={editForm.avatar_url || user.avatar_url || "/placeholder.svg"} />
+                      <AvatarFallback className="text-2xl">{user.full_name?.[0] || "U"}</AvatarFallback>
                     </Avatar>
-                  )}
+                    {isEditing && (
+                      <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                        <label htmlFor="avatar-upload" className="cursor-pointer">
+                          {avatarUploading ? (
+                            <Loader2 className="w-6 h-6 text-white animate-spin" />
+                          ) : (
+                            <Camera className="w-6 h-6 text-white" />
+                          )}
+                        </label>
+                        <input
+                          id="avatar-upload"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAvatarUpload}
+                          className="hidden"
+                          disabled={avatarUploading || saving}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {isEditing && <p className="text-xs text-gray-500 text-center max-w-24">Click to change photo</p>}
                 </div>
 
                 {/* Profile Info */}
-                <div className="flex-1">
+                <div className="flex-1 w-full">
                   {!isEditing ? (
                     <div>
                       <div className="flex items-center space-x-2 mb-2">
@@ -458,6 +595,7 @@ export default function Profile() {
                           onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
                           placeholder="Your full name"
                           disabled={saving}
+                          className="touch-target"
                         />
                       </div>
                       <div>
@@ -468,6 +606,7 @@ export default function Profile() {
                           placeholder="Tell us about yourself..."
                           rows={3}
                           disabled={saving}
+                          className="touch-target"
                         />
                       </div>
                       <div className="grid md:grid-cols-2 gap-4">
@@ -478,6 +617,7 @@ export default function Profile() {
                             onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
                             placeholder="Your location"
                             disabled={saving}
+                            className="touch-target"
                           />
                         </div>
                         <div>
@@ -487,6 +627,7 @@ export default function Profile() {
                             onChange={(e) => setEditForm({ ...editForm, website: e.target.value })}
                             placeholder="https://yourwebsite.com"
                             disabled={saving}
+                            className="touch-target"
                           />
                         </div>
                       </div>
@@ -547,15 +688,15 @@ export default function Profile() {
             }}
           >
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="posts" className="flex items-center space-x-2">
+              <TabsTrigger value="posts" className="flex items-center space-x-2 touch-target">
                 <FileText className="w-4 h-4" />
                 <span>Posts ({stats.totalPosts})</span>
               </TabsTrigger>
-              <TabsTrigger value="liked" className="flex items-center space-x-2">
+              <TabsTrigger value="liked" className="flex items-center space-x-2 touch-target">
                 <Heart className="w-4 h-4" />
                 <span>Liked</span>
               </TabsTrigger>
-              <TabsTrigger value="bookmarks" className="flex items-center space-x-2">
+              <TabsTrigger value="bookmarks" className="flex items-center space-x-2 touch-target">
                 <Eye className="w-4 h-4" />
                 <span>Bookmarks</span>
               </TabsTrigger>
@@ -575,13 +716,40 @@ export default function Profile() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 * index }}
                     >
-                      <BlogCard
-                        post={post}
-                        onLike={handleLike}
-                        onBookmark={handleBookmark}
-                        onView={handlePostView}
-                        layout="magazine"
-                      />
+                      <Card
+                        className="hover:shadow-lg transition-shadow cursor-pointer"
+                        onClick={() => handlePostView(post.id)}
+                      >
+                        <CardContent className="p-6">
+                          <div className="flex items-start space-x-4">
+                            {post.cover_image_url && (
+                              <div className="w-24 h-24 rounded-lg overflow-hidden flex-shrink-0">
+                                <img
+                                  src={post.cover_image_url || "/placeholder.svg"}
+                                  alt={post.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-lg mb-2 line-clamp-2">{post.title}</h3>
+                              {post.excerpt && (
+                                <p className="text-gray-600 dark:text-gray-400 text-sm mb-3 line-clamp-2">
+                                  {post.excerpt}
+                                </p>
+                              )}
+                              <div className="flex items-center justify-between text-sm text-gray-500">
+                                <div className="flex items-center space-x-4">
+                                  <span>❤️ {post.likes_count || 0}</span>
+                                  <span>👁️ {post.views_count || 0}</span>
+                                  <span>💬 {post.comments_count || 0}</span>
+                                </div>
+                                <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
                     </motion.div>
                   ))}
                 </div>
@@ -595,7 +763,7 @@ export default function Profile() {
                     Start sharing your stories with the community!
                   </p>
                   <Link href="/create">
-                    <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+                    <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 touch-target">
                       Create Your First Post
                     </Button>
                   </Link>
@@ -617,13 +785,40 @@ export default function Profile() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 * index }}
                     >
-                      <BlogCard
-                        post={post}
-                        onLike={handleLike}
-                        onBookmark={handleBookmark}
-                        onView={handlePostView}
-                        layout="magazine"
-                      />
+                      <Card
+                        className="hover:shadow-lg transition-shadow cursor-pointer"
+                        onClick={() => handlePostView(post.id)}
+                      >
+                        <CardContent className="p-6">
+                          <div className="flex items-start space-x-4">
+                            {post.cover_image_url && (
+                              <div className="w-24 h-24 rounded-lg overflow-hidden flex-shrink-0">
+                                <img
+                                  src={post.cover_image_url || "/placeholder.svg"}
+                                  alt={post.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-lg mb-2 line-clamp-2">{post.title}</h3>
+                              {post.excerpt && (
+                                <p className="text-gray-600 dark:text-gray-400 text-sm mb-3 line-clamp-2">
+                                  {post.excerpt}
+                                </p>
+                              )}
+                              <div className="flex items-center justify-between text-sm text-gray-500">
+                                <div className="flex items-center space-x-4">
+                                  <span>❤️ {post.likes_count || 0}</span>
+                                  <span>👁️ {post.views_count || 0}</span>
+                                  <span>💬 {post.comments_count || 0}</span>
+                                </div>
+                                <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
                     </motion.div>
                   ))}
                 </div>
@@ -632,7 +827,7 @@ export default function Profile() {
                   <Heart className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-xl font-bold mb-2">No Liked Posts</h3>
                   <p className="text-gray-600 dark:text-gray-400 mb-4">Posts you like will appear here</p>
-                  <Button onClick={loadLikedPosts} variant="outline">
+                  <Button onClick={loadLikedPosts} variant="outline" className="touch-target bg-transparent">
                     Refresh
                   </Button>
                 </Card>
@@ -653,13 +848,40 @@ export default function Profile() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 * index }}
                     >
-                      <BlogCard
-                        post={post}
-                        onLike={handleLike}
-                        onBookmark={handleBookmark}
-                        onView={handlePostView}
-                        layout="magazine"
-                      />
+                      <Card
+                        className="hover:shadow-lg transition-shadow cursor-pointer"
+                        onClick={() => handlePostView(post.id)}
+                      >
+                        <CardContent className="p-6">
+                          <div className="flex items-start space-x-4">
+                            {post.cover_image_url && (
+                              <div className="w-24 h-24 rounded-lg overflow-hidden flex-shrink-0">
+                                <img
+                                  src={post.cover_image_url || "/placeholder.svg"}
+                                  alt={post.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-lg mb-2 line-clamp-2">{post.title}</h3>
+                              {post.excerpt && (
+                                <p className="text-gray-600 dark:text-gray-400 text-sm mb-3 line-clamp-2">
+                                  {post.excerpt}
+                                </p>
+                              )}
+                              <div className="flex items-center justify-between text-sm text-gray-500">
+                                <div className="flex items-center space-x-4">
+                                  <span>❤️ {post.likes_count || 0}</span>
+                                  <span>👁️ {post.views_count || 0}</span>
+                                  <span>💬 {post.comments_count || 0}</span>
+                                </div>
+                                <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
                     </motion.div>
                   ))}
                 </div>
@@ -668,7 +890,7 @@ export default function Profile() {
                   <Eye className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-xl font-bold mb-2">No Bookmarked Posts</h3>
                   <p className="text-gray-600 dark:text-gray-400 mb-4">Posts you bookmark will appear here</p>
-                  <Button onClick={loadBookmarkedPosts} variant="outline">
+                  <Button onClick={loadBookmarkedPosts} variant="outline" className="touch-target bg-transparent">
                     Refresh
                   </Button>
                 </Card>

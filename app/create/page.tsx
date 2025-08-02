@@ -1,163 +1,192 @@
 "use client"
 
-import type React from "react"
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, ImageIcon, Video, Eye, Save, Send, X, CheckCircle, Upload, LinkIcon, Trash2 } from "lucide-react"
+import { ArrowLeft, Save, Eye, Loader2, CheckCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useRequireAuth } from "@/components/auth-provider"
-import { createPost, getCategories } from "@/lib/posts"
 import { RichTextEditor } from "@/components/rich-text-editor"
 import { MediaUpload } from "@/components/media-upload"
-import { Loader2 } from "lucide-react"
+import { createPost, getCategories } from "@/lib/posts"
+import type { Category } from "@/lib/supabase"
 
 export default function CreatePost() {
+  // ✅ Use centralized auth system
   const { user, loading: authLoading } = useRequireAuth()
   const router = useRouter()
 
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
-  const [coverImage, setCoverImage] = useState("")
-  const [coverImageType, setCoverImageType] = useState<"upload" | "url">("upload")
+  const [excerpt, setExcerpt] = useState("")
+  const [coverImageUrl, setCoverImageUrl] = useState("")
   const [postType, setPostType] = useState("blog")
-  const [isPreview, setIsPreview] = useState(false)
-  const [isPublishing, setIsPublishing] = useState(false)
-  const [categories, setCategories] = useState<any[]>([])
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
-  const [uploadError, setUploadError] = useState("")
+  const [isPreview, setIsPreview] = useState(false)
 
-  // ✅ Media uploads state
-  const [uploadedMedia, setUploadedMedia] = useState<
-    Array<{
-      url: string
-      type: "image" | "video" | "file"
-      name: string
-    }>
-  >([])
-
+  // ✅ Load categories when component mounts
   useEffect(() => {
-    if (user) {
+    if (user && !authLoading) {
       loadCategories()
     }
-  }, [user])
+  }, [user, authLoading])
 
   const loadCategories = async () => {
     try {
+      console.log("🏷️ Loading categories for post creation...")
       const categoriesData = await getCategories()
       setCategories(categoriesData)
+      console.log(`✅ Loaded ${categoriesData.length} categories`)
     } catch (error) {
-      console.error("Error loading categories:", error)
+      console.error("❌ Error loading categories:", error)
+      // Set default categories as fallback
+      const defaultCategories = [
+        { id: "1", name: "Technology", icon: "💻", color: "#3B82F6", description: "Tech news and tutorials" },
+        { id: "2", name: "Lifestyle", icon: "🌟", color: "#F59E0B", description: "Life tips and experiences" },
+        { id: "3", name: "Travel", icon: "✈️", color: "#10B981", description: "Travel stories and guides" },
+        { id: "4", name: "Food", icon: "🍽️", color: "#EF4444", description: "Recipes and food culture" },
+        { id: "5", name: "Business", icon: "💼", color: "#8B5CF6", description: "Business insights and tips" },
+      ]
+      setCategories(defaultCategories as Category[])
     }
   }
 
-  // ✅ Handle media upload success
-  const handleMediaUploadSuccess = (url: string, type: "image" | "video" | "file") => {
-    console.log("✅ Media uploaded successfully:", url, type)
-
-    // ✅ Add to uploaded media list
-    const fileName = url.split("/").pop() || "uploaded-file"
-    setUploadedMedia((prev) => [...prev, { url, type, name: fileName }])
-
-    // ✅ If it's an image and no cover image is set, use it as cover
-    if (type === "image" && !coverImage) {
-      setCoverImage(url)
-    }
-
-    setUploadError("")
-    setSuccess(`${type.charAt(0).toUpperCase() + type.slice(1)} uploaded successfully!`)
-
-    // ✅ Clear success message after 3 seconds
-    setTimeout(() => setSuccess(""), 3000)
-  }
-
-  // ✅ Handle media upload error
-  const handleMediaUploadError = (error: string) => {
-    console.error("❌ Media upload error:", error)
-    setUploadError(error)
-    setSuccess("")
-  }
-
-  // ✅ Remove uploaded media
-  const removeUploadedMedia = (urlToRemove: string) => {
-    setUploadedMedia((prev) => prev.filter((media) => media.url !== urlToRemove))
-
-    // ✅ If removing cover image, clear it
-    if (coverImage === urlToRemove) {
-      setCoverImage("")
-    }
-  }
-
-  // ✅ Insert media into content
-  const insertMediaIntoContent = (media: { url: string; type: string; name: string }) => {
-    let mediaHtml = ""
-
-    if (media.type === "image") {
-      mediaHtml = `<img src="${media.url}" alt="${media.name}" style="max-width: 100%; height: auto; border-radius: 8px; margin: 16px 0;" />`
-    } else if (media.type === "video") {
-      mediaHtml = `<video controls style="max-width: 100%; height: auto; border-radius: 8px; margin: 16px 0;">
-        <source src="${media.url}" type="video/mp4">
-        Your browser does not support the video tag.
-      </video>`
-    } else {
-      mediaHtml = `<a href="${media.url}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">📎 ${media.name}</a>`
-    }
+  const handleMediaSelect = (url: string, type: "image" | "video") => {
+    // Insert media into the rich text editor
+    const mediaHtml =
+      type === "image"
+        ? `<img src="${url}" alt="Uploaded image" style="max-width: 100%; height: auto; margin: 1rem 0;" />`
+        : `<video src="${url}" controls style="max-width: 100%; height: auto; margin: 1rem 0;"></video>`
 
     setContent((prev) => prev + mediaHtml)
   }
 
   const handleCoverImageSelect = (url: string) => {
-    setCoverImage(url)
-    console.log("Cover image selected:", url)
+    setCoverImageUrl(url)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    setIsPublishing(true)
-
-    if (!user) {
-      setError("You must be logged in to create a post.")
-      setIsPublishing(false)
-      return
+  const validateForm = () => {
+    if (!title.trim()) {
+      setError("Please enter a title for your post")
+      return false
     }
 
-    if (!title.trim() || !content.trim()) {
-      setError("Title and content cannot be empty.")
-      setIsPublishing(false)
-      return
+    if (!content.trim()) {
+      setError("Please add some content to your post")
+      return false
     }
+
+    if (title.length > 200) {
+      setError("Title must be less than 200 characters")
+      return false
+    }
+
+    return true
+  }
+
+  const handleSave = async (isDraft = false) => {
+    if (!user) return
+
+    if (!validateForm()) return
+
+    setSaving(true)
+    setError("")
+    setSuccess("")
 
     try {
-      const newPost = {
-        title,
-        content,
-        cover_image_url: coverImage || null, // Include cover image URL
-        user_id: user.id,
+      console.log("💾 Saving post...")
+
+      // Generate excerpt if not provided
+      const finalExcerpt =
+        excerpt.trim() ||
+        content.replace(/<[^>]*>/g, "").substring(0, 200) + (content.replace(/<[^>]*>/g, "").length > 200 ? "..." : "")
+
+      const postData = {
+        title: title.trim(),
+        content: content.trim(),
+        excerpt: finalExcerpt,
+        cover_image_url: coverImageUrl || null,
+        post_type: postType,
+        categories: selectedCategories,
       }
-      await createPost(newPost) // Assuming createPost handles the data correctly
-      router.push("/dashboard") // Redirect to dashboard after successful post
-    } catch (err) {
-      console.error("Failed to create post:", err)
-      setError("Failed to create post. Please try again.")
+
+      const createdPost = await createPost(postData)
+
+      console.log("✅ Post created successfully:", createdPost.id)
+      setSuccess("Post created successfully! 🎉")
+
+      // Redirect to the post after a short delay
+      setTimeout(() => {
+        router.push(`/post/${createdPost.id}`)
+      }, 2000)
+    } catch (error: any) {
+      console.error("❌ Error creating post:", error)
+      setError(error.message || "Failed to create post. Please try again.")
     } finally {
-      setIsPublishing(false)
+      setSaving(false)
     }
+  }
+
+  const handleCategoryToggle = (categoryId: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(categoryId) ? prev.filter((id) => id !== categoryId) : [...prev, categoryId],
+    )
   }
 
   // ✅ Show loading while checking auth
-  if (authLoading || !user) {
+  if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-        <p className="ml-2 text-gray-600">Loading user data...</p>
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
+          <div className="w-12 h-12 border-3 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400 text-lg">Loading editor...</p>
+        </motion.div>
+      </div>
+    )
+  }
+
+  // ✅ useRequireAuth will handle redirect if no user
+  if (!user) {
+    return null
+  }
+
+  // ✅ Show success state
+  if (success) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
+          <Card className="p-8 max-w-md">
+            <CardContent className="text-center space-y-4">
+              <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-green-600">Post Created! 🎉</h2>
+              <p className="text-gray-600">{success}</p>
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                <p className="text-green-800 text-sm font-medium">🌍 Your story is now live!</p>
+                <p className="text-green-600 text-xs mt-1">
+                  Your post is now accessible to the global Ubuntu community
+                </p>
+              </div>
+              <div className="flex items-center justify-center space-x-2 text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <p className="text-sm">Redirecting to your post...</p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     )
   }
@@ -166,420 +195,271 @@ export default function CreatePost() {
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative">
       {/* African Pattern Background */}
       <div className="absolute inset-0 opacity-5 dark:opacity-10 pointer-events-none">
-        <div className="absolute top-10 left-10 text-2xl animate-pulse">🌍</div>
-        <div className="absolute top-20 right-20 text-xl animate-bounce">✍️</div>
-        <div className="absolute bottom-20 left-20 text-2xl animate-pulse">📝</div>
+        <div className="absolute top-10 left-10 text-2xl animate-pulse">✍️</div>
+        <div className="absolute top-20 right-20 text-xl animate-bounce">📝</div>
+        <div className="absolute bottom-20 left-20 text-2xl animate-pulse">🌍</div>
         <div className="absolute bottom-10 right-10 text-xl animate-bounce">✨</div>
       </div>
 
       {/* Header */}
-      <div className="bg-white shadow-sm border-b sticky top-0 z-30">
+      <div className="bg-white dark:bg-gray-800 shadow-sm border-b sticky top-0 z-30">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Link href="/dashboard">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" className="touch-target">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>
             </Link>
-            <h1 className="text-xl font-semibold">Create New Post</h1>
+            <h1 className="text-xl font-semibold">Create Post</h1>
           </div>
 
           <div className="flex items-center space-x-2">
-            <Button variant="outline" size="sm" onClick={() => setIsPreview(!isPreview)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsPreview(!isPreview)}
+              className="touch-target bg-transparent"
+            >
               <Eye className="w-4 h-4 mr-2" />
               {isPreview ? "Edit" : "Preview"}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => {}}>
-              <Save className="w-4 h-4 mr-2" />
-              Save Draft
-            </Button>
             <Button
-              className="bg-gradient-to-r from-orange-500 via-red-500 to-purple-600 hover:from-orange-600 hover:via-red-600 hover:to-purple-700 shadow-lg"
-              onClick={handleSubmit}
-              disabled={isPublishing || !title.trim() || !content.trim()}
+              onClick={() => handleSave(false)}
+              disabled={saving}
+              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 touch-target"
             >
-              <Send className="w-4 h-4 mr-2" />
-              {isPublishing ? "Publishing..." : "Chapisha - Publish"}
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Publishing...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Publish
+                </>
+              )}
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
         {/* Success/Error Messages */}
-        {success && (
-          <Alert className="mb-6 border-green-200 bg-green-50">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-700">{success}</AlertDescription>
-          </Alert>
-        )}
-
         {error && (
           <Alert className="mb-6 border-red-200 bg-red-50">
             <AlertDescription className="text-red-700">{error}</AlertDescription>
           </Alert>
         )}
 
-        {uploadError && (
-          <Alert className="mb-6 border-red-200 bg-red-50">
-            <AlertDescription className="text-red-700">{uploadError}</AlertDescription>
-          </Alert>
-        )}
-
-        {!isPreview ? (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-            {/* Post Type Selection */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Post Type</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Button
-                    variant={postType === "blog" ? "default" : "outline"}
-                    className="h-20 flex-col"
-                    onClick={() => setPostType("blog")}
-                  >
-                    <div className="w-8 h-8 mb-2 bg-blue-100 rounded-full flex items-center justify-center">
-                      <span className="text-blue-600">📝</span>
-                    </div>
-                    Blog Post
-                  </Button>
-                  <Button
-                    variant={postType === "microblog" ? "default" : "outline"}
-                    className="h-20 flex-col"
-                    onClick={() => setPostType("microblog")}
-                  >
-                    <div className="w-8 h-8 mb-2 bg-green-100 rounded-full flex items-center justify-center">
-                      <span className="text-green-600">💬</span>
-                    </div>
-                    Microblog
-                  </Button>
-                  <Button
-                    variant={postType === "image" ? "default" : "outline"}
-                    className="h-20 flex-col"
-                    onClick={() => setPostType("image")}
-                  >
-                    <div className="w-8 h-8 mb-2 bg-purple-100 rounded-full flex items-center justify-center">
-                      <ImageIcon className="w-4 h-4 text-purple-600" />
-                    </div>
-                    Image Post
-                  </Button>
-                  <Button
-                    variant={postType === "video" ? "default" : "outline"}
-                    className="h-20 flex-col"
-                    onClick={() => setPostType("video")}
-                  >
-                    <div className="w-8 h-8 mb-2 bg-red-100 rounded-full flex items-center justify-center">
-                      <Video className="w-4 h-4 text-red-600" />
-                    </div>
-                    Video Post
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Title */}
-            <Card>
-              <CardContent className="pt-6">
-                <Input
-                  placeholder="Enter your post title..."
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="text-2xl font-bold border-0 px-0 focus-visible:ring-0 placeholder:text-gray-400"
-                />
-              </CardContent>
-            </Card>
-
-            {/* ✅ Enhanced Media Upload Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center">
-                  <Upload className="w-5 h-5 mr-2" />
-                  Media Upload
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <MediaUpload
-                  onMediaSelect={handleMediaUploadSuccess}
-                  onCoverImageSelect={handleCoverImageSelect} // Added for consistency, though not directly used here
-                  initialCoverImageUrl={coverImage} // Added for consistency
-                />
-
-                {/* ✅ Uploaded Media Gallery */}
-                {uploadedMedia.length > 0 && (
-                  <div className="mt-6">
-                    <h4 className="font-medium mb-3">Uploaded Media ({uploadedMedia.length})</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {uploadedMedia.map((media, index) => (
-                        <div key={index} className="relative group">
-                          <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                            {media.type === "image" ? (
-                              <img
-                                src={media.url || "/placeholder.svg"}
-                                alt={media.name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : media.type === "video" ? (
-                              <video src={media.url} className="w-full h-full object-cover" muted />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <div className="text-center">
-                                  <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center mx-auto mb-2">
-                                    📎
-                                  </div>
-                                  <p className="text-xs text-gray-600 truncate">{media.name}</p>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* ✅ Media Actions */}
-                          <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center space-x-2">
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => insertMediaIntoContent(media)}
-                              className="text-xs"
-                            >
-                              Insert
-                            </Button>
-                            {media.type === "image" && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => setCoverImage(media.url)}
-                                className="text-xs"
-                              >
-                                Cover
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => removeUploadedMedia(media.url)}
-                              className="text-xs"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* ✅ Cover Image Section with Upload/URL Options */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center">
-                  <ImageIcon className="w-5 h-5 mr-2" />
-                  Cover Image
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Tabs value={coverImageType} onValueChange={(value: any) => setCoverImageType(value)}>
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="upload">Upload Image</TabsTrigger>
-                    <TabsTrigger value="url">Image URL</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="upload" className="mt-4">
-                    <MediaUpload
-                      isCoverImage
-                      onCoverImageSelect={handleCoverImageSelect}
-                      initialCoverImageUrl={coverImage}
-                    />
-                    {coverImage && (
-                      <p className="text-sm text-gray-500 mt-2">
-                        Current Cover:{" "}
-                        <a href={coverImage} target="_blank" rel="noopener noreferrer" className="underline truncate">
-                          {coverImage}
-                        </a>
-                      </p>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="url" className="mt-4">
+        <div className="grid lg:grid-cols-3 gap-8">
+          {/* Main Editor */}
+          <div className="lg:col-span-2 space-y-6">
+            {!isPreview ? (
+              <>
+                {/* Title */}
+                <Card>
+                  <CardContent className="p-6">
                     <div className="space-y-4">
-                      <div className="flex space-x-2">
-                        <LinkIcon className="w-5 h-5 text-gray-400 mt-2.5" />
+                      <div>
+                        <Label htmlFor="title">Post Title *</Label>
                         <Input
-                          placeholder="https://example.com/image.jpg"
-                          value={coverImage}
-                          onChange={(e) => setCoverImage(e.target.value)}
-                          className="flex-1"
+                          id="title"
+                          placeholder="Enter your post title..."
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          className="text-lg font-semibold touch-target"
+                          maxLength={200}
                         />
+                        <p className="text-xs text-gray-500 mt-1">{title.length}/200 characters</p>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="excerpt">Excerpt (Optional)</Label>
+                        <Input
+                          id="excerpt"
+                          placeholder="Brief description of your post..."
+                          value={excerpt}
+                          onChange={(e) => setExcerpt(e.target.value)}
+                          className="touch-target"
+                          maxLength={300}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          {excerpt.length}/300 characters {!excerpt && "(Auto-generated if empty)"}
+                        </p>
                       </div>
                     </div>
-                  </TabsContent>
-                </Tabs>
-
-                {/* ✅ Cover Image Preview */}
-                {coverImage && (
-                  <div className="mt-4">
-                    <div className="relative">
-                      <img
-                        src={coverImage || "/placeholder.svg"}
-                        alt="Cover preview"
-                        className="w-full h-48 object-cover rounded-lg"
-                        onError={() => setCoverImage("")}
-                      />
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="absolute top-2 right-2"
-                        onClick={() => setCoverImage("")}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Rich Text Editor */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Content</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <RichTextEditor value={content} onChange={setContent} />
-                <div className="mt-2">
-                  <MediaUpload onMediaSelect={insertMediaIntoContent} />
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ) : (
-          /* Preview Mode */
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <Card>
-              <CardContent className="p-8">
-                {/* Author Info */}
-                <div className="flex items-center space-x-3 mb-6">
-                  <Avatar className="w-12 h-12">
-                    <AvatarImage src={user.avatar_url || "/placeholder.svg"} />
-                    <AvatarFallback>{user.full_name[0]}</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <div className="font-semibold">{user.full_name}</div>
-                    <div className="text-sm text-gray-500">@{user.username} • Just now</div>
-                  </div>
-                </div>
-
-                {/* Title */}
-                <h1 className="text-3xl font-bold mb-4">{title || "Your Post Title"}</h1>
+                  </CardContent>
+                </Card>
 
                 {/* Cover Image */}
-                {coverImage && (
-                  <div className="w-full h-64 mb-6 overflow-hidden rounded-lg">
-                    <img src={coverImage || "/placeholder.svg"} alt="Cover" className="w-full h-full object-cover" />
-                  </div>
-                )}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Cover Image/Video</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <MediaUpload
+                      onCoverImageSelect={handleCoverImageSelect}
+                      isCoverImage={true}
+                      initialCoverImageUrl={coverImageUrl}
+                    />
+                  </CardContent>
+                </Card>
 
-                {/* Content */}
-                <div className="prose prose-lg max-w-none">
-                  {content ? (
-                    <div className="rich-content" dangerouslySetInnerHTML={{ __html: content }} />
-                  ) : (
-                    <p className="text-gray-500 italic">Your content will appear here...</p>
-                  )}
-                </div>
+                {/* Content Editor */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Content *</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <RichTextEditor
+                      value={content}
+                      onChange={setContent}
+                      placeholder="Start writing your story..."
+                      minHeight="500px"
+                    />
+                  </CardContent>
+                </Card>
 
-                {/* Engagement Buttons */}
-                <div className="flex items-center justify-between mt-8 pt-6 border-t">
-                  <div className="flex items-center space-x-4">
-                    <Button variant="ghost" size="sm" className="flex items-center space-x-1">
-                      <span>❤️</span>
-                      <span>0</span>
-                    </Button>
-                    <Button variant="ghost" size="sm" className="flex items-center space-x-1">
-                      <span>💬</span>
-                      <span>0</span>
-                    </Button>
-                    <Button variant="ghost" size="sm" className="flex items-center space-x-1">
-                      <span>🔗</span>
-                      <span>0</span>
-                    </Button>
+                {/* Media Upload */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Add Media</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <MediaUpload onMediaSelect={handleMediaSelect} />
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              /* Preview Mode */
+              <Card>
+                <CardContent className="p-8">
+                  <div className="space-y-6">
+                    {coverImageUrl && (
+                      <div className="w-full h-64 rounded-lg overflow-hidden">
+                        {coverImageUrl.match(/\.(mp4|mov|avi|webm)$/i) ? (
+                          <video src={coverImageUrl} className="w-full h-full object-cover" controls />
+                        ) : (
+                          <img
+                            src={coverImageUrl || "/placeholder.svg"}
+                            alt="Cover"
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    <div>
+                      <h1 className="text-3xl font-bold mb-4">{title || "Untitled Post"}</h1>
+                      {excerpt && <p className="text-lg text-gray-600 dark:text-gray-400 mb-6 italic">{excerpt}</p>}
+                      <div
+                        className="prose prose-lg max-w-none"
+                        dangerouslySetInnerHTML={{ __html: content || "<p>No content yet...</p>" }}
+                      />
+                    </div>
                   </div>
-                  <Button variant="ghost" size="sm">
-                    <span>🔖</span>
-                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Post Settings */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Post Settings</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="post-type">Post Type</Label>
+                  <Select value={postType} onValueChange={setPostType}>
+                    <SelectTrigger className="touch-target">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="blog">Blog Post</SelectItem>
+                      <SelectItem value="microblog">Microblog</SelectItem>
+                      <SelectItem value="image">Image Post</SelectItem>
+                      <SelectItem value="video">Video Post</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardContent>
             </Card>
-          </motion.div>
-        )}
-      </div>
 
-      {/* Custom styles for rich content preview */}
-      <style jsx global>{`
-        .rich-content {
-          line-height: 1.7;
-        }
-        
-        .rich-content blockquote {
-          border-left: 4px solid #e5e7eb;
-          padding-left: 1rem;
-          margin: 1rem 0;
-          font-style: italic;
-          color: #6b7280;
-        }
-        
-        .rich-content pre {
-          background-color: #f3f4f6;
-          padding: 1rem;
-          border-radius: 0.375rem;
-          font-family: 'Courier New', monospace;
-          overflow-x: auto;
-        }
-        
-        .rich-content ul, .rich-content ol {
-          padding-left: 2rem;
-          margin: 0.5rem 0;
-        }
-        
-        .rich-content li {
-          margin: 0.25rem 0;
-        }
-        
-        .rich-content a {
-          color: #3b82f6;
-          text-decoration: underline;
-        }
-        
-        .rich-content img {
-          max-width: 100%;
-          height: auto;
-          border-radius: 0.375rem;
-          margin: 0.5rem 0;
-        }
-        
-        .rich-content video {
-          max-width: 100%;
-          height: auto;
-          border-radius: 0.375rem;
-          margin: 0.5rem 0;
-        }
-        
-        .rich-content h1, .rich-content h2, .rich-content h3 {
-          margin: 1.5rem 0 1rem 0;
-          font-weight: bold;
-        }
-        
-        .rich-content h1 { font-size: 2rem; }
-        .rich-content h2 { font-size: 1.5rem; }
-        .rich-content h3 { font-size: 1.25rem; }
-        
-        .rich-content p {
-          margin: 1rem 0;
-        }
-      `}</style>
+            {/* Categories */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Categories</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {categories.map((category) => (
+                    <label
+                      key={category.id}
+                      className="flex items-center space-x-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800 touch-target"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCategories.includes(category.id)}
+                        onChange={() => handleCategoryToggle(category.id)}
+                        className="rounded"
+                      />
+                      <span className="text-lg">{category.icon}</span>
+                      <span className="text-sm">{category.name}</span>
+                    </label>
+                  ))}
+                </div>
+                {selectedCategories.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-2">{selectedCategories.length} categories selected</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Publishing Info */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Publishing</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+                  <div className="flex items-center space-x-2">
+                    <span>👤</span>
+                    <span>Author: {user.full_name}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span>🌍</span>
+                    <span>Visibility: Public</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span>📅</span>
+                    <span>Publish: Immediately</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Tips */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">💡 Writing Tips</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                  <p>• Use a compelling title to grab attention</p>
+                  <p>• Add a cover image to make your post stand out</p>
+                  <p>• Break up text with headings and images</p>
+                  <p>• Choose relevant categories for better discovery</p>
+                  <p>• Preview your post before publishing</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
