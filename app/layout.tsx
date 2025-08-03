@@ -30,7 +30,6 @@ export const metadata: Metadata = {
     description: "The ultimate African platform for creators, writers, and storytellers.",
     creator: "@PostiAfrica",
   },
-  generator: "smart_devs",
 }
 
 export default function RootLayout({
@@ -41,37 +40,18 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* ✅ Mobile viewport optimization */}
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-
-        {/* ✅ PWA and mobile app capabilities */}
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Posti" />
-
-        {/* ✅ Prevent zoom on input focus (iOS Safari) */}
         <meta name="format-detection" content="telephone=no" />
         <meta name="format-detection" content="email=no" />
-
-        {/* ✅ Theme colors for mobile browsers */}
         <meta name="theme-color" content="#f97316" />
         <meta name="msapplication-TileColor" content="#f97316" />
-
-        {/* ✅ Prevent ServiceWorker issues in preview environments */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Disable problematic service workers in preview
-              if ('serviceWorker' in navigator && window.location.hostname.includes('vusercontent.net')) {
-                navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                  for(let registration of registrations) {
-                    registration.unregister();
-                  }
-                });
-              }
-              
-              // Fix viewport height on mobile
               function setVH() {
                 let vh = window.innerHeight * 0.01;
                 document.documentElement.style.setProperty('--vh', vh + 'px');

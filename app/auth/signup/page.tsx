@@ -89,7 +89,7 @@ export default function SignUp() {
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
 
-  // ✅ Redirect if already authenticated
+  // ✅ Redirect authenticated users - let middleware handle this primarily
   useEffect(() => {
     if (!authLoading && user) {
       console.log("✅ User already authenticated, redirecting to dashboard")
@@ -123,7 +123,6 @@ export default function SignUp() {
       return false
     }
 
-    // ✅ Check for valid username format
     if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
       setError("Username can only contain letters, numbers, and underscores")
       return false
@@ -146,7 +145,6 @@ export default function SignUp() {
     try {
       console.log("🔄 Starting sign up process...")
 
-      // ✅ Use the centralized signUp function
       const data = await signUp(formData.email, formData.password, {
         username: formData.username.toLowerCase().trim(),
         full_name: formData.fullName.trim(),
@@ -159,32 +157,30 @@ export default function SignUp() {
 
       console.log("✅ Sign up successful for:", data.user.email)
 
-      // ✅ Show success message
       setSuccess(true)
       setError("")
 
-      // ✅ Redirect to verification page with email
+      // ✅ Redirect to verification page
       setTimeout(() => {
         router.push(`/auth/verify-email?email=${encodeURIComponent(formData.email)}`)
       }, 2000)
     } catch (err: any) {
       console.error("❌ Sign up error:", err)
 
-      // ✅ Handle specific errors
       let errorMessage = "Failed to create account"
 
-      if (err.message?.includes("already_registered") || err.message?.includes("already exists")) {
+      if (err.message?.includes("User already registered")) {
+        errorMessage = "An account with this email already exists. Please sign in instead."
+      } else if (err.message?.includes("already_registered") || err.message?.includes("already exists")) {
         errorMessage = "An account with this email already exists. Please sign in instead."
       } else if (err.message?.includes("invalid_email")) {
         errorMessage = "Please enter a valid email address."
       } else if (err.message?.includes("weak_password")) {
         errorMessage = "Password is too weak. Please choose a stronger password."
-      } else if (err.message?.includes("rate_limit")) {
+      } else if (err.message?.includes("rate_limit") || err.message?.includes("too_many_requests")) {
         errorMessage = "Too many attempts. Please wait a moment and try again."
-      } else if (err.message?.includes("network")) {
+      } else if (err.message?.includes("network") || err.message?.includes("fetch")) {
         errorMessage = "Network error. Please check your connection and try again."
-      } else if (err.message?.includes("User already registered")) {
-        errorMessage = "An account with this email already exists. Please sign in instead."
       } else if (err.message) {
         errorMessage = err.message
       }
@@ -197,7 +193,6 @@ export default function SignUp() {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    // ✅ Clear error when user starts typing
     if (error) setError("")
   }
 
@@ -206,18 +201,11 @@ export default function SignUp() {
     return null
   }
 
-  // ✅ Show loading state while auth is loading
+  // ✅ Show minimal loading state while auth is loading
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center text-white"
-        >
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
-          <p>Loading...</p>
-        </motion.div>
+        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
       </div>
     )
   }
@@ -226,7 +214,6 @@ export default function SignUp() {
   if (success) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
-        {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-10 left-10 text-6xl animate-pulse">🎉</div>
           <div className="absolute top-20 right-20 text-4xl animate-bounce">✨</div>
@@ -256,15 +243,6 @@ export default function SignUp() {
                   Click the verification link to activate your global Ubuntu account
                 </p>
               </div>
-              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                <p className="text-green-800 text-sm font-medium">🌍 Global Account Benefits:</p>
-                <ul className="text-green-600 text-xs mt-1 space-y-1">
-                  <li>• Access from any device, anywhere</li>
-                  <li>• Write from internet cafes or friends' phones</li>
-                  <li>• Your stories are safely stored in the cloud</li>
-                  <li>• Connect with the Ubuntu community worldwide</li>
-                </ul>
-              </div>
               <div className="flex items-center justify-center space-x-2 text-gray-500">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <p className="text-sm">Redirecting to verification page...</p>
@@ -278,14 +256,11 @@ export default function SignUp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-10 left-10 text-6xl animate-pulse">🌍</div>
         <div className="absolute top-20 right-20 text-4xl animate-bounce">🦁</div>
         <div className="absolute bottom-20 left-20 text-5xl animate-pulse">🌴</div>
         <div className="absolute bottom-10 right-10 text-4xl animate-bounce">🐘</div>
-        <div className="absolute top-1/2 left-1/4 text-3xl animate-pulse">🦒</div>
-        <div className="absolute top-1/3 right-1/3 text-3xl animate-bounce">🌺</div>
       </div>
 
       <motion.div
@@ -327,7 +302,7 @@ export default function SignUp() {
                       placeholder="John Doe"
                       value={formData.fullName}
                       onChange={(e) => handleInputChange("fullName", e.target.value)}
-                      className="pl-10 touch-target"
+                      className="pl-10 h-12"
                       required
                       disabled={loading}
                       autoComplete="name"
@@ -342,7 +317,7 @@ export default function SignUp() {
                     placeholder="johndoe"
                     value={formData.username}
                     onChange={(e) => handleInputChange("username", e.target.value.toLowerCase())}
-                    className="touch-target"
+                    className="h-12"
                     required
                     disabled={loading}
                     autoComplete="username"
@@ -360,7 +335,7 @@ export default function SignUp() {
                     placeholder="john@example.com"
                     value={formData.email}
                     onChange={(e) => handleInputChange("email", e.target.value)}
-                    className="pl-10 touch-target"
+                    className="pl-10 h-12"
                     required
                     disabled={loading}
                     autoComplete="email"
@@ -377,7 +352,7 @@ export default function SignUp() {
                     onValueChange={(value) => handleInputChange("country", value)}
                     disabled={loading}
                   >
-                    <SelectTrigger className="pl-10 touch-target">
+                    <SelectTrigger className="pl-10 h-12">
                       <SelectValue placeholder="Select your country" />
                     </SelectTrigger>
                     <SelectContent>
@@ -401,7 +376,7 @@ export default function SignUp() {
                     placeholder="Create a password (min 6 characters)"
                     value={formData.password}
                     onChange={(e) => handleInputChange("password", e.target.value)}
-                    className="pl-10 pr-10 touch-target"
+                    className="pl-10 pr-10 h-12"
                     required
                     disabled={loading}
                     autoComplete="new-password"
@@ -409,7 +384,7 @@ export default function SignUp() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 touch-target"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
                     disabled={loading}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
@@ -428,7 +403,7 @@ export default function SignUp() {
                     placeholder="Confirm your password"
                     value={formData.confirmPassword}
                     onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                    className="pl-10 pr-10 touch-target"
+                    className="pl-10 pr-10 h-12"
                     required
                     disabled={loading}
                     autoComplete="new-password"
@@ -436,7 +411,7 @@ export default function SignUp() {
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 touch-target"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
                     disabled={loading}
                     aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                   >
@@ -447,7 +422,7 @@ export default function SignUp() {
 
               <Button
                 type="submit"
-                className="w-full bg-gradient-to-r from-orange-500 via-red-500 to-purple-600 hover:from-orange-600 hover:via-red-600 hover:to-purple-700 text-white py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 touch-target"
+                className="w-full bg-gradient-to-r from-orange-500 via-red-500 to-purple-600 hover:from-orange-600 hover:via-red-600 hover:to-purple-700 text-white py-3 h-12 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
                 disabled={loading}
               >
                 {loading ? (
@@ -478,7 +453,7 @@ export default function SignUp() {
               <Link href="/auth/signin" className="mt-4 block">
                 <Button
                   variant="outline"
-                  className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 touch-target"
+                  className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 h-12"
                   disabled={loading}
                 >
                   <Globe className="w-4 h-4 mr-2" />
@@ -487,7 +462,6 @@ export default function SignUp() {
               </Link>
             </div>
 
-            {/* ✅ Additional mobile-friendly features */}
             <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
               <p className="text-orange-800 text-xs font-medium">💡 Pro Tip:</p>
               <p className="text-orange-600 text-xs mt-1">

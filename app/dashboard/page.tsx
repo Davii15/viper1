@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -26,7 +26,6 @@ import {
   Compass,
   PenTool,
   UserIcon,
-  Loader2,
   RefreshCw,
   MessageCircle,
 } from "lucide-react"
@@ -34,211 +33,42 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/components/auth-provider"
 
-// Replace the mock functions with your actual implementations
-import {
-  getPosts,
-  getFollowingPosts,
-  likePost,
-  unlikePost,
-  bookmarkPost,
-  unbookmarkPost,
-  trackPostView,
-} from "@/lib/posts"
-
 export default function Dashboard() {
   const { user, loading: authLoading, signOut } = useAuth()
   const router = useRouter()
-
-  const [posts, setPosts] = useState([])
-  const [filteredPosts, setFilteredPosts] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("for-you")
-  const [layout, setLayout] = useState<"magazine" | "card" | "minimal">("magazine")
-  const [postsLoading, setPostsLoading] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [hasMore, setHasMore] = useState(true)
-  const [filters, setFilters] = useState({})
-  const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({})
 
-  // Update the loadPosts function:
-  const loadPosts = useCallback(
-    async (page = 1, append = false) => {
-      if (!user) return
-
-      if (!append) setPostsLoading(true)
-
-      try {
-        let postsResponse
-
-        if (activeTab === "following") {
-          postsResponse = await getFollowingPosts(page, 20)
-        } else {
-          const postFilters = {
-            ...filters,
-            page,
-            limit: 20,
-          }
-          postsResponse = await getPosts(postFilters)
-        }
-
-        console.log("Loaded posts:", postsResponse.posts.length)
-
-        if (append) {
-          setPosts((prev) => [...prev, ...postsResponse.posts])
-        } else {
-          setPosts(postsResponse.posts)
-          setCurrentPage(1)
-        }
-
-        setHasMore(postsResponse.hasMore)
-      } catch (error) {
-        console.error("Error loading posts:", error)
-        if (!append) {
-          setPosts([])
-        }
-      } finally {
-        setPostsLoading(false)
-        setRefreshing(false)
-      }
-    },
-    [user, activeTab, filters],
-  )
-
-  // ✅ Load posts only when user is available and dependencies change
+  // ✅ Let middleware handle redirects primarily
   useEffect(() => {
-    if (user && !authLoading) {
-      loadPosts()
+    if (!authLoading && !user) {
+      console.log("🔒 No user found, redirecting to signin")
+      router.replace("/auth/signin")
     }
-  }, [user, authLoading, loadPosts])
+  }, [user, authLoading, router])
 
-  // ✅ Handle search
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredPosts(posts)
-      return
-    }
-
-    const filtered = posts.filter(
-      (post: any) =>
-        post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        post.user?.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        post.user?.username.toLowerCase().includes(searchQuery.toLowerCase()),
-    )
-
-    setFilteredPosts(filtered)
-  }, [searchQuery, posts])
-
-  const refreshPosts = useCallback(async () => {
-    console.log("Refreshing posts...")
-    setRefreshing(true)
-    await loadPosts()
-  }, [loadPosts])
-
-  // Update the handleLike function:
-  const handleLike = async (postId: string, isLiked: boolean) => {
-    if (!user || actionLoading[`like-${postId}`]) return
-
-    setActionLoading((prev) => ({ ...prev, [`like-${postId}`]: true }))
-
-    try {
-      if (isLiked) {
-        await unlikePost(postId)
-      } else {
-        await likePost(postId)
-      }
-
-      const updatePosts = (posts: any[]) =>
-        posts.map((post) =>
-          post.id === postId
-            ? {
-                ...post,
-                is_liked: !isLiked,
-                likes_count: post.likes_count + (isLiked ? -1 : 1),
-              }
-            : post,
-        )
-
-      setPosts(updatePosts)
-      setFilteredPosts(updatePosts)
-    } catch (error) {
-      console.error("❌ Error toggling like:", error)
-    } finally {
-      setActionLoading((prev) => ({ ...prev, [`like-${postId}`]: false }))
-    }
-  }
-
-  // Update the handleBookmark function:
-  const handleBookmark = async (postId: string, isBookmarked: boolean) => {
-    if (!user || actionLoading[`bookmark-${postId}`]) return
-
-    setActionLoading((prev) => ({ ...prev, [`bookmark-${postId}`]: true }))
-
-    try {
-      if (isBookmarked) {
-        await unbookmarkPost(postId)
-      } else {
-        await bookmarkPost(postId)
-      }
-
-      const updatePosts = (posts: any[]) =>
-        posts.map((post) => (post.id === postId ? { ...post, is_bookmarked: !isBookmarked } : post))
-
-      setPosts(updatePosts)
-      setFilteredPosts(updatePosts)
-    } catch (error) {
-      console.error("❌ Error toggling bookmark:", error)
-    } finally {
-      setActionLoading((prev) => ({ ...prev, [`bookmark-${postId}`]: false }))
-    }
-  }
-
-  // Update the handlePostView function:
-  const handlePostView = async (postId: string) => {
-    try {
-      await trackPostView(postId)
-      router.push(`/post/${postId}`)
-    } catch (error) {
-      console.error("❌ Error tracking view:", error)
-      router.push(`/post/${postId}`)
-    }
-  }
-
-  const loadMorePosts = () => {
-    if (hasMore && !postsLoading) {
-      loadPosts(currentPage + 1, true)
-      setCurrentPage((prev) => prev + 1)
-    }
-  }
-
-  const handleFiltersChange = (newFilters: any) => {
-    setFilters(newFilters)
-    setCurrentPage(1)
-  }
-
-  // ✅ Show loading only while auth is loading
+  // ✅ Show optimized loading state
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 flex items-center justify-center">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
           <div className="w-12 h-12 border-3 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400 text-lg">Loading your dashboard...</p>
-          <p className="text-gray-500 dark:text-gray-500 text-sm mt-2">Accessing your global account...</p>
+          <p className="text-gray-600 text-lg">Loading your dashboard...</p>
+          <p className="text-gray-500 text-sm mt-2">Accessing your global account...</p>
         </motion.div>
       </div>
     )
   }
 
-  // ✅ Don't render anything if no user - let middleware handle redirect
+  // ✅ Don't render if no user (will redirect)
   if (!user) {
     return null
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 relative">
       {/* African Pattern Background */}
-      <div className="absolute inset-0 opacity-5 dark:opacity-10 pointer-events-none">
+      <div className="absolute inset-0 opacity-5 pointer-events-none">
         <div className="absolute top-10 left-10 text-2xl animate-pulse">🌍</div>
         <div className="absolute top-20 right-20 text-xl animate-bounce">🦁</div>
         <div className="absolute bottom-20 left-20 text-2xl animate-pulse">🌴</div>
@@ -248,7 +78,7 @@ export default function Dashboard() {
       </div>
 
       {/* Navigation Header */}
-      <div className="bg-white dark:bg-gray-800 shadow-sm border-b sticky top-0 z-30">
+      <div className="bg-white shadow-sm border-b sticky top-0 z-30">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-6">
             <Link href="/dashboard" className="flex items-center space-x-2">
@@ -312,16 +142,16 @@ export default function Dashboard() {
                 <Button variant="ghost" className="flex items-center space-x-2 p-2">
                   <Avatar className="w-8 h-8">
                     <AvatarImage src={user.avatar_url || "/placeholder.svg"} />
-                    <AvatarFallback>{user.full_name?.[0] || "U"}</AvatarFallback>
+                    <AvatarFallback>{user.full_name?.[0] || user.email?.[0] || "U"}</AvatarFallback>
                   </Avatar>
-                  <span className="hidden md:block font-medium">{user.full_name}</span>
+                  <span className="hidden md:block font-medium">{user.full_name || "User"}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{user.full_name}</p>
-                    <p className="text-xs text-gray-500">@{user.username}</p>
+                    <p className="text-sm font-medium">{user.full_name || "User"}</p>
+                    <p className="text-xs text-gray-500">@{user.username || user.email?.split("@")[0]}</p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
@@ -391,10 +221,17 @@ export default function Dashboard() {
             {/* Greeting */}
             <Card>
               <CardContent className="p-6">
-                <h1 className="text-2xl font-bold mb-2">Karibu, {user.full_name}! 🌍</h1>
-                <p className="text-gray-600 dark:text-gray-400">
+                <h1 className="text-2xl font-bold mb-2">Karibu, {user.full_name || "User"}! 🌍</h1>
+                <p className="text-gray-600">
                   Welcome to your global Ubuntu community. Share your stories from anywhere in the world.
                 </p>
+                <div className="mt-4 bg-green-50 p-3 rounded-lg border border-green-200">
+                  <p className="text-green-800 text-sm font-medium">🌍 Global Account Active!</p>
+                  <p className="text-green-600 text-xs mt-1">
+                    You can access Posti from any device, anywhere in the world. Your stories are safely stored in the
+                    cloud.
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
@@ -409,15 +246,9 @@ export default function Dashboard() {
               </Tabs>
 
               <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={refreshPosts}
-                  disabled={refreshing}
-                  className="bg-white hover:bg-gray-50"
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-                  {refreshing ? "Refreshing..." : "Refresh"}
+                <Button variant="outline" size="sm" className="bg-white hover:bg-gray-50">
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Refresh
                 </Button>
               </div>
             </div>
@@ -437,71 +268,26 @@ export default function Dashboard() {
 
             {/* Posts Feed */}
             <div className="space-y-6">
-              {postsLoading && !refreshing ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+              <Card className="p-12 text-center">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <BookOpen className="w-8 h-8 text-gray-400" />
                 </div>
-              ) : filteredPosts.length > 0 ? (
-                <>
-                  {filteredPosts.map((post: any, index) => (
-                    <motion.div
-                      key={post.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.1 * (index % 4) }}
-                    >
-                      <Card>
-                        <CardContent className="p-6">
-                          <p>Post content would go here</p>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))}
-
-                  {hasMore && (
-                    <div className="flex justify-center py-6">
-                      <Button
-                        onClick={loadMorePosts}
-                        disabled={postsLoading}
-                        variant="outline"
-                        className="flex items-center space-x-2 bg-transparent"
-                      >
-                        {postsLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4" />
-                        )}
-                        <span>{postsLoading ? "Loading..." : "Load More Posts"}</span>
-                      </Button>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <Card className="p-12 text-center">
-                  <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <BookOpen className="w-8 h-8 text-gray-400" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">No posts found</h3>
-                  <p className="text-gray-600 dark:text-gray-400 mb-4">
-                    {searchQuery
-                      ? `No results for "${searchQuery}"`
-                      : "Be the first to share your story with the Ubuntu community!"}
-                  </p>
-                  <Link href="/create">
-                    <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Your First Post
-                    </Button>
-                  </Link>
-                </Card>
-              )}
+                <h3 className="text-xl font-bold mb-2">Welcome to Posti!</h3>
+                <p className="text-gray-600 mb-4">Be the first to share your story with the Ubuntu community!</p>
+                <Link href="/create">
+                  <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Your First Post
+                  </Button>
+                </Link>
+              </Card>
             </div>
           </div>
         </div>
       </div>
 
       {/* Mobile Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t z-30 safe-area-inset-bottom">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t z-30 pb-safe">
         <div className="grid grid-cols-5 gap-1 p-2">
           <Link href="/dashboard">
             <Button variant="ghost" className="flex flex-col items-center space-y-1 h-auto py-2 min-h-[44px]">

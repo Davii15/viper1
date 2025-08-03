@@ -1,195 +1,128 @@
-import { supabase } from "@/lib/supabase"
-import type { User } from "@/lib/supabase"
+import { supabase } from "./supabase"
+import type { User } from "./supabase"
 
-// ✅ Simplified, fast authentication functions
-export const signIn = async (email: string, password: string) => {
-  console.log("🔐 Signing in user...")
-
+export const signUp = async (
+  email: string,
+  password: string,
+  userData: {
+    username: string
+    full_name: string
+  },
+) => {
   try {
+    console.log("🔐 Starting sign up process...")
+
+    // Check if username is already taken
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("username")
+      .eq("username", userData.username)
+      .single()
+
+    if (existingUser) {
+      throw new Error("Username is already taken")
+    }
+
+    // Sign up with Supabase Auth
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          username: userData.username,
+          full_name: userData.full_name,
+        },
+      },
+    })
+
+    if (error) throw error
+
+    console.log("✅ Sign up successful")
+    return { data, error: null }
+  } catch (error: any) {
+    console.error("❌ Sign up error:", error)
+    return { data: null, error }
+  }
+}
+
+export const signIn = async (email: string, password: string) => {
+  try {
+    console.log("🔐 Starting sign in process...")
+
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.toLowerCase().trim(),
+      email,
       password,
     })
 
-    if (error) {
-      console.error("❌ Sign in error:", error)
-      throw error
-    }
-
-    if (!data.user) {
-      throw new Error("Authentication failed - no user data")
-    }
+    if (error) throw error
 
     console.log("✅ Sign in successful")
-    return data
-  } catch (error) {
-    console.error("❌ Sign in failed:", error)
-    throw error
+    return { data, error: null }
+  } catch (error: any) {
+    console.error("❌ Sign in error:", error)
+    return { data: null, error }
   }
 }
 
 export const signOut = async () => {
-  console.log("🚪 Signing out...")
-
   try {
+    console.log("🔐 Signing out...")
+
     const { error } = await supabase.auth.signOut()
+
     if (error) throw error
 
     console.log("✅ Sign out successful")
-
-    // ✅ Clean redirect without force reload
-    if (typeof window !== "undefined") {
-      window.location.href = "/auth/signin"
-    }
-  } catch (error) {
+    return { error: null }
+  } catch (error: any) {
     console.error("❌ Sign out error:", error)
-    throw error
+    return { error }
   }
 }
 
-// ✅ Fast user fetching - only get from database if needed
 export const getCurrentUser = async (): Promise<User | null> => {
   try {
-    console.log("🔍 Getting current user...")
-
-    // ✅ Quick session check first
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
+      data: { user: authUser },
+    } = await supabase.auth.getUser()
 
-    if (sessionError) {
-      console.error("❌ Session error:", sessionError)
+    if (!authUser) return null
+
+    // Get full user profile from database
+    const { data: userProfile, error } = await supabase.from("users").select("*").eq("id", authUser.id).single()
+
+    if (error) {
+      console.error("❌ Error fetching user profile:", error)
       return null
     }
 
-    if (!session?.user) {
-      console.log("❌ No active session")
-      return null
-    }
-
-    const authUser = session.user
-    console.log("✅ Session found for:", authUser.email)
-
-    // ✅ Get user profile from database
-    const { data: profile, error: profileError } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", authUser.id)
-      .single()
-
-    if (profileError) {
-      if (profileError.code === "PGRST116") {
-        // User doesn't exist in database - create profile
-        console.log("👤 Creating missing user profile...")
-        return await createUserProfileInDatabase(authUser)
-      }
-      throw profileError
-    }
-
-    // ✅ Update last seen (non-blocking)
-    supabase
-      .from("users")
-      .update({
-        last_seen: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", authUser.id)
-      .then(() => console.log("✅ Last seen updated"))
-      .catch((err) => console.warn("⚠️ Last seen update failed:", err))
-
-    console.log("✅ User loaded successfully")
-    return profile
+    return userProfile
   } catch (error) {
-    console.error("❌ Get current user failed:", error)
+    console.error("❌ Error getting current user:", error)
     return null
   }
 }
 
-// ✅ Create user profile in database
-const createUserProfileInDatabase = async (authUser: any): Promise<User> => {
+export const getUserProfile = async (userId: string): Promise<User | null> => {
   try {
-    const newProfile = {
-      id: authUser.id,
-      email: authUser.email!,
-      username: authUser.user_metadata.username || authUser.email!.split("@")[0],
-      full_name: authUser.user_metadata.full_name || "User",
-      country: authUser.user_metadata.country || null,
-      avatar_url: authUser.user_metadata.avatar_url || null,
-      bio: null,
-      location: null,
-      website: null,
-      verified: authUser.email_confirmed_at ? true : false,
-      created_at: authUser.created_at,
-      updated_at: new Date().toISOString(),
-      last_seen: new Date().toISOString(),
-    }
-
-    const { data: createdProfile, error } = await supabase.from("users").insert(newProfile).select().single()
+    const { data: userProfile, error } = await supabase.from("users").select("*").eq("id", userId).single()
 
     if (error) {
-      console.error("❌ Database profile creation failed:", error)
-      return newProfile as User
+      console.error("❌ Error fetching user profile:", error)
+      return null
     }
 
-    console.log("✅ User profile created")
-    return createdProfile
+    return userProfile
   } catch (error) {
-    console.error("❌ Profile creation error:", error)
-    throw error
-  }
-}
-
-export const signUp = async (email: string, password: string, metadata: any) => {
-  console.log("📝 Signing up user...")
-
-  try {
-    const { data, error } = await supabase.auth.signUp({
-      email: email.toLowerCase().trim(),
-      password,
-      options: {
-        data: {
-          username: metadata.username,
-          full_name: metadata.full_name,
-          country: metadata.country,
-        },
-        emailRedirectTo: `${getBaseUrl()}/auth/callback`,
-      },
-    })
-
-    if (error) {
-      console.error("❌ Sign up error:", error)
-      throw error
-    }
-
-    console.log("✅ Sign up successful")
-    return data
-  } catch (error) {
-    console.error("❌ Sign up failed:", error)
-    throw error
-  }
-}
-
-const getBaseUrl = (): string => {
-  if (typeof window !== "undefined") {
-    return window.location.origin
-  }
-  return process.env.NEXT_PUBLIC_SITE_URL || "https://posti-phi.vercel.app"
-}
-
-export const isAuthenticated = async (): Promise<boolean> => {
-  try {
-    const user = await getCurrentUser()
-    return !!user
-  } catch {
-    return false
+    console.error("❌ Error getting user profile:", error)
+    return null
   }
 }
 
 export const updateUserProfile = async (userId: string, updates: Partial<User>) => {
-  console.log("📝 Updating user profile...")
-
   try {
+    console.log("📝 Updating user profile...")
+
     const { data, error } = await supabase
       .from("users")
       .update({
@@ -200,33 +133,48 @@ export const updateUserProfile = async (userId: string, updates: Partial<User>) 
       .select()
       .single()
 
-    if (error) {
-      console.error("❌ Profile update error:", error)
-      throw error
-    }
+    if (error) throw error
 
-    console.log("✅ User profile updated")
-    return data
-  } catch (error) {
-    console.error("❌ updateUserProfile failed:", error)
-    throw error
+    console.log("✅ Profile updated successfully")
+    return { data, error: null }
+  } catch (error: any) {
+    console.error("❌ Profile update error:", error)
+    return { data: null, error }
   }
 }
 
-export const getUserByEmail = async (email: string): Promise<User | null> => {
+export const resetPassword = async (email: string) => {
   try {
-    const { data, error } = await supabase.from("users").select("*").eq("email", email.toLowerCase().trim()).single()
+    console.log("🔐 Sending password reset email...")
 
-    if (error) {
-      if (error.code === "PGRST116") {
-        return null
-      }
-      throw error
-    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    })
 
-    return data
-  } catch (error) {
-    console.error("❌ getUserByEmail failed:", error)
-    return null
+    if (error) throw error
+
+    console.log("✅ Password reset email sent")
+    return { error: null }
+  } catch (error: any) {
+    console.error("❌ Password reset error:", error)
+    return { error }
+  }
+}
+
+export const updatePassword = async (newPassword: string) => {
+  try {
+    console.log("🔐 Updating password...")
+
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    })
+
+    if (error) throw error
+
+    console.log("✅ Password updated successfully")
+    return { error: null }
+  } catch (error: any) {
+    console.error("❌ Password update error:", error)
+    return { error }
   }
 }

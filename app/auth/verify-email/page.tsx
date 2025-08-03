@@ -117,7 +117,6 @@ export default function VerifyEmail() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-10 left-10 text-6xl animate-pulse">📧</div>
         <div className="absolute top-20 right-20 text-4xl animate-bounce">✨</div>
@@ -185,7 +184,7 @@ export default function VerifyEmail() {
                   <p className="text-sm text-gray-500">Didn't receive the email?</p>
                   <Button
                     variant="outline"
-                    className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200"
+                    className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 h-12"
                     onClick={handleResendVerification}
                     disabled={resending || !userEmail || countdown > 0}
                   >
@@ -236,7 +235,7 @@ export default function VerifyEmail() {
                 <div className="space-y-2">
                   <Button
                     variant="outline"
-                    className="w-full bg-transparent hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                    className="w-full bg-transparent hover:bg-red-50 hover:text-red-600 hover:border-red-200 h-12"
                     onClick={handleResendVerification}
                     disabled={resending || !userEmail || countdown > 0}
                   >
@@ -258,7 +257,7 @@ export default function VerifyEmail() {
                     )}
                   </Button>
                   <Link href="/auth/signup">
-                    <Button variant="ghost" className="w-full">
+                    <Button variant="ghost" className="w-full h-12">
                       <Globe className="w-4 h-4 mr-2" />
                       Create New Account
                     </Button>
@@ -268,7 +267,7 @@ export default function VerifyEmail() {
             )}
 
             <Link href="/auth/signin">
-              <Button variant="ghost" className="w-full hover:bg-gray-50">
+              <Button variant="ghost" className="w-full hover:bg-gray-50 h-12">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Sign In
               </Button>

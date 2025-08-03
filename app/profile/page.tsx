@@ -43,7 +43,7 @@ import { useAuth, useRequireAuth } from "@/components/auth-provider"
 import { supabase } from "@/lib/supabase"
 import type { Post } from "@/lib/supabase"
 
-// Replace the mock functions with your actual implementations
+// Import the posts functions
 import {
   getUserPosts,
   getUserLikedPosts,
@@ -116,7 +116,6 @@ export default function Profile() {
     await Promise.all([loadUserPosts(user.id), loadUserStats(user.id)])
   }
 
-  // Update the loadUserPosts function to use your implementation:
   const loadUserPosts = async (userId: string) => {
     setPostsLoading(true)
     try {
@@ -269,7 +268,6 @@ export default function Profile() {
     }
   }
 
-  // Update the handleLike function:
   const handleLike = async (postId: string, isLiked: boolean) => {
     if (!user) return
 
@@ -281,7 +279,7 @@ export default function Profile() {
       }
 
       // Update local state
-      const updatePosts = (posts: any[]) =>
+      const updatePosts = (posts: Post[]) =>
         posts.map((post) =>
           post.id === postId
             ? {
@@ -299,7 +297,6 @@ export default function Profile() {
     }
   }
 
-  // Update the handleBookmark function:
   const handleBookmark = async (postId: string, isBookmarked: boolean) => {
     if (!user) return
 
@@ -311,7 +308,7 @@ export default function Profile() {
       }
 
       // Update local state
-      const updatePosts = (posts: any[]) =>
+      const updatePosts = (posts: Post[]) =>
         posts.map((post) => (post.id === postId ? { ...post, is_bookmarked: !isBookmarked } : post))
 
       setUserPosts(updatePosts)
@@ -321,7 +318,6 @@ export default function Profile() {
     }
   }
 
-  // Update the handlePostView function:
   const handlePostView = async (postId: string) => {
     try {
       await trackPostView(postId)
@@ -339,7 +335,6 @@ export default function Profile() {
     })
   }
 
-  // Update the loadLikedPosts function:
   const loadLikedPosts = async () => {
     if (!user) return
     setLikedLoading(true)
@@ -354,7 +349,6 @@ export default function Profile() {
     }
   }
 
-  // Update the loadBookmarkedPosts function:
   const loadBookmarkedPosts = async () => {
     if (!user) return
     setBookmarkedLoading(true)

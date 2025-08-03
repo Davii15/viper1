@@ -80,8 +80,7 @@ export default function ChatPage() {
     try {
       console.log("💬 Loading conversations...")
 
-      // TODO: Replace with your actual conversations query
-      // This is a placeholder structure
+      // Check if conversations table exists
       const { data: conversationsData, error } = await supabase
         .from("conversations")
         .select(`
@@ -139,7 +138,7 @@ export default function ChatPage() {
     try {
       console.log("📨 Loading messages for conversation:", conversationId)
 
-      // TODO: Replace with your actual messages query
+      // Check if messages table exists
       const { data: messagesData, error } = await supabase
         .from("messages")
         .select(`

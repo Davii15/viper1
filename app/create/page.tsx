@@ -53,11 +53,46 @@ export default function CreatePost() {
       console.error("❌ Error loading categories:", error)
       // Set default categories as fallback
       const defaultCategories = [
-        { id: "1", name: "Technology", icon: "💻", color: "#3B82F6", description: "Tech news and tutorials" },
-        { id: "2", name: "Lifestyle", icon: "🌟", color: "#F59E0B", description: "Life tips and experiences" },
-        { id: "3", name: "Travel", icon: "✈️", color: "#10B981", description: "Travel stories and guides" },
-        { id: "4", name: "Food", icon: "🍽️", color: "#EF4444", description: "Recipes and food culture" },
-        { id: "5", name: "Business", icon: "💼", color: "#8B5CF6", description: "Business insights and tips" },
+        {
+          id: "1",
+          name: "Technology",
+          icon: "💻",
+          color: "#3B82F6",
+          description: "Tech news and tutorials",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: "2",
+          name: "Lifestyle",
+          icon: "🌟",
+          color: "#F59E0B",
+          description: "Life tips and experiences",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: "3",
+          name: "Travel",
+          icon: "✈️",
+          color: "#10B981",
+          description: "Travel stories and guides",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: "4",
+          name: "Food",
+          icon: "🍽️",
+          color: "#EF4444",
+          description: "Recipes and food culture",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: "5",
+          name: "Business",
+          icon: "💼",
+          color: "#8B5CF6",
+          description: "Business insights and tips",
+          created_at: new Date().toISOString(),
+        },
       ]
       setCategories(defaultCategories as Category[])
     }
@@ -117,7 +152,7 @@ export default function CreatePost() {
         title: title.trim(),
         content: content.trim(),
         excerpt: finalExcerpt,
-        cover_image_url: coverImageUrl || null,
+        cover_image_url: coverImageUrl || undefined,
         post_type: postType,
         categories: selectedCategories,
       }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { CheckCircle, AlertCircle, Loader2, ArrowRight, Globe } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { upsertUserProfile } from "@/lib/auth"
 import Link from "next/link"
 
 export default function AuthCallback() {
@@ -64,7 +65,9 @@ export default function AuthCallback() {
       console.log("✅ Email verified successfully for:", sessionData.user.email)
 
       setMessage("Setting up your global account...")
-      await createUserProfile(sessionData.user)
+
+      // ✅ Create or update user profile
+      await upsertUserProfile(sessionData.user)
 
       setStatus("success")
       setMessage("Karibu Posti! Your global account is ready! 🌍")
@@ -98,81 +101,8 @@ export default function AuthCallback() {
     }
   }
 
-  const createUserProfile = async (user: any) => {
-    try {
-      console.log("👤 Creating user profile...")
-
-      const { data: existingProfile, error: checkError } = await supabase
-        .from("users")
-        .select("id, verified")
-        .eq("id", user.id)
-        .single()
-
-      if (existingProfile) {
-        console.log("✅ Profile exists, updating verification status...")
-
-        const { error: updateError } = await supabase
-          .from("users")
-          .update({
-            verified: true,
-            updated_at: new Date().toISOString(),
-            last_seen: new Date().toISOString(),
-          })
-          .eq("id", user.id)
-
-        if (updateError) {
-          console.warn("⚠️ Profile update failed:", updateError)
-        } else {
-          console.log("✅ Profile verification updated")
-        }
-        return
-      }
-
-      const profileData = {
-        id: user.id,
-        email: user.email,
-        username: user.user_metadata?.username || user.email.split("@")[0],
-        full_name: user.user_metadata?.full_name || "User",
-        country: user.user_metadata?.country || null,
-        avatar_url: user.user_metadata?.avatar_url || null,
-        bio: null,
-        location: null,
-        website: null,
-        verified: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        last_seen: new Date().toISOString(),
-      }
-
-      console.log("👤 Creating new profile with data:", {
-        email: profileData.email,
-        username: profileData.username,
-      })
-
-      const { error: insertError } = await supabase.from("users").insert(profileData)
-
-      if (insertError) {
-        console.error("❌ Profile creation error:", insertError)
-
-        if (insertError.code === "23505") {
-          console.log("✅ Profile already exists (duplicate key), continuing...")
-          return
-        }
-
-        console.warn("⚠️ Profile creation failed, but user is verified:", insertError.message)
-        return
-      }
-
-      console.log("✅ User profile created successfully")
-    } catch (error: any) {
-      console.error("❌ Profile creation error:", error)
-      console.warn("⚠️ Continuing without profile creation - user can complete setup later")
-    }
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-10 left-10 text-6xl animate-pulse">🌍</div>
         <div className="absolute top-20 right-20 text-4xl animate-bounce">✨</div>
@@ -215,7 +145,6 @@ export default function AuthCallback() {
           <CardContent className="text-center space-y-4">
             <p className="text-gray-600">{message}</p>
 
-            {/* Loading Animation */}
             {status === "loading" && (
               <div className="space-y-4">
                 <div className="flex items-center justify-center space-x-2">
@@ -233,7 +162,6 @@ export default function AuthCallback() {
               </div>
             )}
 
-            {/* Success State */}
             {status === "success" && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.8 }}
@@ -261,7 +189,6 @@ export default function AuthCallback() {
               </motion.div>
             )}
 
-            {/* Error State */}
             {status === "error" && (
               <div className="space-y-4">
                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
@@ -278,7 +205,7 @@ export default function AuthCallback() {
 
                 <div className="space-y-2">
                   <Link href="/auth/signin">
-                    <Button className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+                    <Button className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 h-12">
                       <Globe className="w-4 h-4 mr-2" />
                       Sign In to Your Account
                     </Button>
@@ -286,7 +213,7 @@ export default function AuthCallback() {
                   <Link href="/auth/signup">
                     <Button
                       variant="outline"
-                      className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200"
+                      className="w-full bg-transparent hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 h-12"
                     >
                       <ArrowRight className="w-4 h-4 mr-2" />
                       Create New Account
